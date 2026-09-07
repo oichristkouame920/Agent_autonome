@@ -1,6 +1,26 @@
+import json
 import re
-import subprocess
+import sys
+
 from pathlib import Path
+
+
+# ============================================================
+# CHEMINS
+# ============================================================
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(
+        0,
+        str(ROOT_DIR)
+    )
+
+
+# ============================================================
+# WINDOWS
+# ============================================================
 
 from windows_tools import (
     is_application_running,
@@ -9,180 +29,274 @@ from windows_tools import (
 
 
 # ============================================================
-# CHEMINS DU PROJET
+# FICHIERS
 # ============================================================
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-
-
-LLAMA_EXE = (
-    ROOT_DIR
-    / "llama.cpp"
-    / "build"
-    / "bin"
-    / "Release"
-    / "llama-cli.exe"
-)
-
-
-MODEL_FILE = (
-    ROOT_DIR
-    / "models"
-    / "Qwen3.5-0.8B-Q4_0.gguf"
+from file_tools import (
+    create_folder,
+    list_directory,
+    move_file_within_root,
 )
 
 
 # ============================================================
-# MODE DEBUG
+# WEB
 # ============================================================
 
-# True pendant le développement.
-#
-# Permet de voir exactement
-# la réponse générée par le LLM.
+from web_tools import (
+    open_website,
+)
+
+
+# ============================================================
+# ROUTINES
+# ============================================================
+
+from routine_tools import (
+    execute_routine,
+)
+
+
+# ============================================================
+# HABITUDES / BROUILLONS
+# ============================================================
+
+from habit_tools import (
+    add_habit_draft_action,
+    create_habit_draft,
+    delete_habit_draft,
+    format_habit_draft,
+    get_habit_draft,
+    get_pending_habits,
+    record_session,
+    remove_habit_draft_action,
+    set_habit_draft_trigger,
+    update_habit_draft_name,
+)
+
+
+# ============================================================
+# DECISIONS SUR LES HABITUDES
+# ============================================================
+
+from habit_decision_tools import (
+    accept_habit,
+    confirm_habit_draft,
+    reject_habit,
+)
+
+
+# ============================================================
+# BACKENDS
+# ============================================================
+
+from backends.backend_manager import (
+    get_backend_status,
+    interpret as interpret_backend,
+    load_agent_config,
+)
+
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+SCHEMA_VERSION = 1
 
 DEBUG = True
 
 
 # ============================================================
-# PROMPT SYSTEME
+# ACTIONS AUTORISEES
 # ============================================================
 
-SYSTEM_PROMPT = (
-    "Tu es AgentLocal, un assistant local "
-    "qui répond principalement en français "
-    "et parle toujours de lui à la première personne. "
+SUPPORTED_ACTIONS = {
+    # Applications
+    "open_application",
+    "check_application",
 
-    "Tu n'inventes jamais tes capacités, "
-    "tes accès ou les résultats d'une action. "
+    # Web
+    "open_website",
 
-    "Tu n'exécutes jamais directement "
-    "une action Windows. "
+    # Fichiers
+    "list_directory",
+    "create_folder",
+    "move_file_within_root",
 
-    "Lorsque l'utilisateur demande une ou plusieurs "
-    "actions sur l'ordinateur, "
-    "tu dois produire une ligne ACTION_REQUEST "
-    "pour chaque action demandée. "
+    # Routines
+    "run_routine",
 
-    "Le format exact est : "
-    "ACTION_REQUEST | action=nom_action | "
-    "target=cible | status=waiting_for_tool. "
+    # Habitudes
+    "list_habits",
+    "modify_habit",
+    "show_habit_draft",
 
-    "Les seules actions actuellement disponibles sont "
-    "open_application et check_application. "
+    # Modification des brouillons
+    "rename_habit_draft",
+    "add_habit_draft_action",
+    "remove_habit_draft_action",
+    "set_habit_draft_trigger",
+    "cancel_habit_draft",
+    "confirm_habit_draft",
 
-    "Les seules applications actuellement connues sont "
-    "edge et vscode. "
-
-    "Si l'utilisateur dit ouvre Edge, "
-    "réponds exactement : "
-    "ACTION_REQUEST | action=open_application | "
-    "target=edge | status=waiting_for_tool. "
-
-    "Si l'utilisateur dit ouvre VS Code, "
-    "réponds exactement : "
-    "ACTION_REQUEST | action=open_application | "
-    "target=vscode | status=waiting_for_tool. "
-
-    "Si l'utilisateur dit ouvre Edge et VS Code, "
-    "réponds avec exactement deux lignes : "
-    "ACTION_REQUEST | action=open_application | "
-    "target=edge | status=waiting_for_tool\n"
-    "ACTION_REQUEST | action=open_application | "
-    "target=vscode | status=waiting_for_tool. "
-
-    "Si l'utilisateur demande si Edge est ouvert, "
-    "réponds exactement : "
-    "ACTION_REQUEST | action=check_application | "
-    "target=edge | status=waiting_for_tool. "
-
-    "Si l'utilisateur demande si VS Code est ouvert, "
-    "réponds exactement : "
-    "ACTION_REQUEST | action=check_application | "
-    "target=vscode | status=waiting_for_tool. "
-
-    "Si l'utilisateur demande plusieurs vérifications, "
-    "produis également une ligne ACTION_REQUEST "
-    "pour chaque application. "
-
-    "Si plusieurs actions sont demandées, "
-    "tu ne dois en oublier aucune. "
-
-    "Une action comprise n'est pas forcément autorisée. "
-
-    "Tu ne peux jamais t'accorder toi-même "
-    "une nouvelle permission. "
-
-    "Tu ne dois jamais affirmer qu'une action "
-    "a réussi avant confirmation du programme. "
-
-    "Pour une conversation normale ne demandant "
-    "aucune action système, "
-    "réponds naturellement, clairement "
-    "et brièvement en français."
-)
-
-
-# ============================================================
-# FORMAT ACTION_REQUEST
-# ============================================================
-
-ACTION_PATTERN = re.compile(
-    r"ACTION_REQUEST\s*\|\s*"
-    r"action\s*=\s*([a-zA-Z0-9_-]+)\s*\|\s*"
-    r"target\s*=\s*([a-zA-Z0-9_.-]+)\s*\|\s*"
-    r"status\s*=\s*waiting_for_tool",
-    re.IGNORECASE,
-)
-
-
-# ============================================================
-# ALIAS DES APPLICATIONS
-# ============================================================
-
-TARGET_ALIASES = {
-
-    # --------------------------------------------------------
-    # EDGE
-    # --------------------------------------------------------
-
-    "edge": "edge",
-
-    "msedge": "edge",
-
-    "microsoftedge": "edge",
-
-    "microsoft-edge": "edge",
-
-    "microsoft_edge": "edge",
-
-
-    # --------------------------------------------------------
-    # VS CODE
-    # --------------------------------------------------------
-
-    "vscode": "vscode",
-
-    "vs-code": "vscode",
-
-    "vs_code": "vscode",
-
-    "code": "vscode",
-
-    "visualstudiocode": "vscode",
-
-    "visual-studio-code": "vscode",
-
-    "visual_studio_code": "vscode",
+    # Décisions
+    "accept_habit",
+    "reject_habit",
 }
 
 
-def normalize_target(target):
-    """
-    Transforme les différentes façons
-    de nommer une application
-    en identifiant interne unique.
-    """
+# ============================================================
+# ACTIONS QUI PEUVENT ETRE APPRISES
+# ============================================================
+
+LEARNABLE_AGENT_ACTIONS = {
+    "open_application",
+    "open_website",
+}
+
+
+# ============================================================
+# CONFIGURATION GENERALE
+# ============================================================
+
+def get_agent_config():
+
+    config = load_agent_config()
+
+    if not isinstance(
+        config,
+        dict
+    ):
+        return {}
+
+    return config
+
+
+# ============================================================
+# APPRENTISSAGE ACTIVE ?
+# ============================================================
+
+def is_learning_enabled():
+
+    config = get_agent_config()
+
+    learning = config.get(
+        "learning",
+        {}
+    )
+
+    if not isinstance(
+        learning,
+        dict
+    ):
+        return False
+
+    return bool(
+        learning.get(
+            "enabled",
+            False
+        )
+    )
+
+
+# ============================================================
+# VALIDATION D'UNE ACTION
+# ============================================================
+
+def validate_action(
+    action_data
+):
+
+    # --------------------------------------------------------
+    # FORMAT
+    # --------------------------------------------------------
+
+    if not isinstance(
+        action_data,
+        dict
+    ):
+
+        return (
+            False,
+            "Format d'action invalide."
+        )
+
+    # --------------------------------------------------------
+    # VERSION
+    # --------------------------------------------------------
+
+    schema_version = action_data.get(
+        "schema_version"
+    )
+
+    if schema_version != SCHEMA_VERSION:
+
+        return (
+            False,
+            (
+                "Version du contrat "
+                f"non supportée : {schema_version}"
+            )
+        )
+
+    # --------------------------------------------------------
+    # ACTION
+    # --------------------------------------------------------
+
+    action = action_data.get(
+        "action"
+    )
+
+    if not isinstance(
+        action,
+        str
+    ):
+
+        return (
+            False,
+            "Action manquante."
+        )
+
+    action = (
+        action
+        .lower()
+        .strip()
+    )
+
+    if not action:
+
+        return (
+            False,
+            "Action vide."
+        )
+
+    if action not in SUPPORTED_ACTIONS:
+
+        return (
+            False,
+            (
+                "Action inconnue ou interdite : "
+                f"{action}"
+            )
+        )
+
+    # --------------------------------------------------------
+    # CIBLE
+    # --------------------------------------------------------
+
+    target = action_data.get(
+        "target"
+    )
+
+    if not isinstance(
+        target,
+        str
+    ):
+
+        return (
+            False,
+            "Cible manquante."
+        )
 
     target = (
         target
@@ -190,322 +304,666 @@ def normalize_target(target):
         .strip()
     )
 
-    return TARGET_ALIASES.get(
-        target,
-        target
-    )
-
-
-# ============================================================
-# VERIFICATION DES FICHIERS LOCAUX
-# ============================================================
-
-def check_local_files():
-    """
-    Vérifie que llama.cpp
-    et le modèle GGUF existent.
-    """
-
-    if not LLAMA_EXE.exists():
+    if not target:
 
         return (
             False,
-            (
-                "llama-cli.exe introuvable : "
-                f"{LLAMA_EXE}"
-            )
+            "Cible vide."
         )
 
-    if not MODEL_FILE.exists():
+    # ========================================================
+    # IDENTIFIANTS D'HABITUDES
+    # ========================================================
 
-        return (
-            False,
-            (
-                "Modèle GGUF introuvable : "
-                f"{MODEL_FILE}"
-            )
-        )
+    habit_actions = {
+        "modify_habit",
+        "show_habit_draft",
+        "rename_habit_draft",
+        "add_habit_draft_action",
+        "remove_habit_draft_action",
+        "set_habit_draft_trigger",
+        "cancel_habit_draft",
+        "confirm_habit_draft",
+        "accept_habit",
+        "reject_habit",
+    }
 
-    return True, None
+    if action in habit_actions:
 
-
-# ============================================================
-# COMMUNICATION AVEC LE LLM LOCAL
-# ============================================================
-
-def ask_llm(user_message):
-    """
-    Lance le LLM local pour une seule instruction.
-
-    Le LLM :
-    - fonctionne hors ligne ;
-    - ne possède aucun accès Windows direct ;
-    - produit uniquement une intention.
-    """
-
-    valid, error = (
-        check_local_files()
-    )
-
-    if not valid:
-        return None, error
-
-    command = [
-
-        str(LLAMA_EXE),
-
-        # ----------------------------------------------------
-        # MODELE
-        # ----------------------------------------------------
-
-        "-m",
-        str(MODEL_FILE),
-
-        # ----------------------------------------------------
-        # CONTEXTE REDUIT
-        # ----------------------------------------------------
-
-        "-c",
-        "1024",
-
-        # ----------------------------------------------------
-        # MAXIMUM DE TOKENS GENERES
-        # ----------------------------------------------------
-
-        "-n",
-        "140",
-
-        # ----------------------------------------------------
-        # THREADS CPU
-        # ----------------------------------------------------
-
-        "-t",
-        "4",
-
-        # ----------------------------------------------------
-        # DESACTIVE LE RAISONNEMENT LONG
-        # ----------------------------------------------------
-
-        "--reasoning",
-        "off",
-
-        # ----------------------------------------------------
-        # INTERDIT LES TELECHARGEMENTS
-        # ----------------------------------------------------
-
-        "--offline",
-
-        # ----------------------------------------------------
-        # UNE SEULE REPONSE
-        # ----------------------------------------------------
-
-        "--single-turn",
-
-        # ----------------------------------------------------
-        # ENTREES / SORTIES SIMPLIFIEES
-        # ----------------------------------------------------
-
-        "--simple-io",
-
-        # ----------------------------------------------------
-        # NE REAFFICHE PAS LE PROMPT
-        # ----------------------------------------------------
-
-        "--no-display-prompt",
-
-        # ----------------------------------------------------
-        # CACHE LES STATISTIQUES
-        # ----------------------------------------------------
-
-        "--no-show-timings",
-
-        # ----------------------------------------------------
-        # PROMPT SYSTEME
-        # ----------------------------------------------------
-
-        "-sys",
-        SYSTEM_PROMPT,
-
-        # ----------------------------------------------------
-        # MESSAGE UTILISATEUR
-        # ----------------------------------------------------
-
-        "-p",
-        user_message,
-    ]
-
-    try:
-
-        result = subprocess.run(
-            command,
-
-            capture_output=True,
-
-            text=True,
-
-            encoding="utf-8",
-
-            errors="replace",
-
-            timeout=120,
-        )
-
-    except subprocess.TimeoutExpired:
-
-        return (
-            None,
-            (
-                "Le LLM local a dépassé "
-                "le délai maximum."
-            )
-        )
-
-    except OSError as error:
-
-        return (
-            None,
-            (
-                "Impossible de démarrer "
-                f"le LLM local : {error}"
-            )
-        )
-
-    # --------------------------------------------------------
-    # ERREUR DU PROCESSUS
-    # --------------------------------------------------------
-
-    if result.returncode != 0:
-
-        technical_error = (
-            result.stderr.strip()
-        )
-
-        if technical_error:
+        if not target.isdigit():
 
             return (
-                None,
+                False,
                 (
-                    "Le LLM s'est arrêté "
-                    f"avec le code {result.returncode}.\n"
-                    f"{technical_error}"
+                    "Identifiant d'habitude "
+                    "invalide."
                 )
             )
 
-        return (
-            None,
-            (
-                "Le LLM s'est arrêté "
-                f"avec le code {result.returncode}."
+    # ========================================================
+    # LISTE DES HABITUDES
+    # ========================================================
+
+    if action == "list_habits":
+
+        if target != "pending":
+
+            return (
+                False,
+                (
+                    "Type de liste "
+                    "d'habitudes invalide."
+                )
             )
-        )
 
-    # --------------------------------------------------------
-    # REPONSE
-    # --------------------------------------------------------
+    # ========================================================
+    # ROUTINE
+    # ========================================================
 
-    response = (
-        result.stdout.strip()
+    if action == "run_routine":
+
+        if not re.fullmatch(
+            r"[a-z0-9_-]+",
+            target
+        ):
+
+            return (
+                False,
+                "Identifiant de routine invalide."
+            )
+
+    # ========================================================
+    # APPLICATION / SITE
+    # ========================================================
+
+    if action in {
+        "open_application",
+        "check_application",
+        "open_website",
+    }:
+
+        if not re.fullmatch(
+            r"[a-z0-9_.-]+",
+            target
+        ):
+
+            return (
+                False,
+                "Cible technique invalide."
+            )
+
+    # ========================================================
+    # RACINES FICHIERS
+    # ========================================================
+
+    if action in {
+        "list_directory",
+        "create_folder",
+        "move_file_within_root",
+    }:
+
+        if target not in {
+            "desktop",
+            "documents",
+            "downloads",
+        }:
+
+            return (
+                False,
+                (
+                    "Racine de fichiers "
+                    "interdite ou inconnue."
+                )
+            )
+
+    # ========================================================
+    # PARAMETRES
+    # ========================================================
+
+    params = action_data.get(
+        "params",
+        {}
     )
 
-    if not response:
+    if params is None:
+        params = {}
 
-        return (
-            None,
-            (
-                "Le LLM n'a produit "
-                "aucune réponse."
-            )
-        )
-
-    return response, None
-
-
-# ============================================================
-# EXTRACTION DE PLUSIEURS ACTIONS
-# ============================================================
-
-def extract_actions(llm_response):
-    """
-    Extrait tous les ACTION_REQUEST
-    présents dans la réponse.
-
-    Exemple :
-
-    ouvre Edge et VS Code
-
-    peut produire :
-
-    ACTION_REQUEST ... edge
-    ACTION_REQUEST ... vscode
-    """
-
-    actions = []
-
-    seen = set()
-
-    for match in ACTION_PATTERN.finditer(
-        llm_response
+    if not isinstance(
+        params,
+        dict
     ):
 
-        action = (
-            match
-            .group(1)
+        return (
+            False,
+            "Paramètres invalides."
+        )
+
+    # --------------------------------------------------------
+    # CREATION D'UN DOSSIER
+    # --------------------------------------------------------
+
+    if action == "create_folder":
+
+        name = params.get(
+            "name"
+        )
+
+        if not isinstance(
+            name,
+            str
+        ):
+
+            return (
+                False,
+                "Nom de dossier invalide."
+            )
+
+        name = name.strip()
+
+        if not name:
+
+            return (
+                False,
+                "Le nom du dossier est vide."
+            )
+
+        if len(name) > 120:
+
+            return (
+                False,
+                "Le nom du dossier est trop long."
+            )
+
+    # --------------------------------------------------------
+    # DEPLACEMENT D'UN FICHIER
+    # --------------------------------------------------------
+
+    if action == "move_file_within_root":
+
+        file_name = params.get(
+            "file_name"
+        )
+
+        destination_folder = params.get(
+            "destination_folder"
+        )
+
+        if not isinstance(
+            file_name,
+            str
+        ):
+
+            return (
+                False,
+                "Nom de fichier invalide."
+            )
+
+        if not isinstance(
+            destination_folder,
+            str
+        ):
+
+            return (
+                False,
+                "Dossier destination invalide."
+            )
+
+        file_name = file_name.strip()
+
+        destination_folder = (
+            destination_folder
+            .strip()
+        )
+
+        if not file_name:
+
+            return (
+                False,
+                "Le nom du fichier est vide."
+            )
+
+        if not destination_folder:
+
+            return (
+                False,
+                (
+                    "Le nom du dossier "
+                    "destination est vide."
+                )
+            )
+
+        if len(file_name) > 180:
+
+            return (
+                False,
+                "Le nom du fichier est trop long."
+            )
+
+        if len(destination_folder) > 180:
+
+            return (
+                False,
+                (
+                    "Le nom du dossier destination "
+                    "est trop long."
+                )
+            )
+
+    # --------------------------------------------------------
+    # RENOMMAGE HABITUDE
+    # --------------------------------------------------------
+
+    if action == "rename_habit_draft":
+
+        name = params.get(
+            "name"
+        )
+
+        if not isinstance(
+            name,
+            str
+        ):
+
+            return (
+                False,
+                "Nouveau nom invalide."
+            )
+
+        name = name.strip()
+
+        if not name:
+
+            return (
+                False,
+                "Le nouveau nom est vide."
+            )
+
+        if len(name) > 120:
+
+            return (
+                False,
+                "Le nouveau nom est trop long."
+            )
+
+    # --------------------------------------------------------
+    # DECLENCHEUR HABITUDE
+    # --------------------------------------------------------
+
+    if action == "set_habit_draft_trigger":
+
+        trigger = params.get(
+            "trigger"
+        )
+
+        if not isinstance(
+            trigger,
+            str
+        ):
+
+            return (
+                False,
+                "Déclencheur invalide."
+            )
+
+        trigger = trigger.strip()
+
+        if not trigger:
+
+            return (
+                False,
+                "Le déclencheur est vide."
+            )
+
+        if len(trigger) > 120:
+
+            return (
+                False,
+                "Le déclencheur est trop long."
+            )
+
+    # --------------------------------------------------------
+    # AJOUT / RETRAIT ACTION HABITUDE
+    # --------------------------------------------------------
+
+    if action in {
+        "add_habit_draft_action",
+        "remove_habit_draft_action",
+    }:
+
+        child_action = params.get(
+            "action"
+        )
+
+        child_target = params.get(
+            "target"
+        )
+
+        if child_action not in LEARNABLE_AGENT_ACTIONS:
+
+            return (
+                False,
+                (
+                    "Action interdite "
+                    "dans un brouillon."
+                )
+            )
+
+        if not isinstance(
+            child_target,
+            str
+        ):
+
+            return (
+                False,
+                (
+                    "Cible du brouillon "
+                    "invalide."
+                )
+            )
+
+        child_target = (
+            child_target
             .lower()
             .strip()
         )
 
-        target = normalize_target(
-            match.group(2)
-        )
+        if not re.fullmatch(
+            r"[a-z0-9_.-]+",
+            child_target
+        ):
 
-        # ----------------------------------------------------
-        # Evite les doublons accidentels du LLM.
-        # ----------------------------------------------------
+            return (
+                False,
+                (
+                    "Cible du brouillon "
+                    "invalide."
+                )
+            )
 
-        action_key = (
-            action,
-            target
-        )
-
-        if action_key in seen:
-            continue
-
-        seen.add(
-            action_key
-        )
-
-        actions.append({
-            "action": action,
-            "target": target,
-        })
-
-    return actions
+    return (
+        True,
+        None
+    )
 
 
 # ============================================================
-# EXECUTION SECURISEE
+# FORMAT DES HABITUDES EN ATTENTE
 # ============================================================
 
-def execute_action(action_data):
-    """
-    Python décide quelles actions
-    existent réellement.
+def format_pending_habits():
 
-    Même si le LLM invente une action,
-    elle sera refusée ici.
-    """
+    habits = get_pending_habits()
 
-    action = action_data[
-        "action"
+    if not habits:
+
+        return (
+            "Aucune habitude "
+            "n'est actuellement en attente."
+        )
+
+    lines = [
+        "=" * 55,
+        "HABITUDES EN ATTENTE",
+        "=" * 55,
     ]
 
-    target = action_data[
-        "target"
-    ]
+    for habit in habits:
 
-    # --------------------------------------------------------
-    # OUVRIR UNE APPLICATION
-    # --------------------------------------------------------
+        habit_id = habit.get(
+            "id"
+        )
+
+        lines.append("")
+        lines.append(
+            f"ID : {habit_id}"
+        )
+
+        lines.append(
+            (
+                "Nom : "
+                f"{habit.get('title')}"
+            )
+        )
+
+        lines.append(
+            (
+                "Profil : "
+                f"{habit.get('profile')}"
+            )
+        )
+
+        lines.append(
+            (
+                "Jours observés : "
+                f"{habit.get('distinct_days')}"
+            )
+        )
+
+        lines.append(
+            (
+                "Occurrences : "
+                f"{habit.get('occurrences')}"
+            )
+        )
+
+        lines.append(
+            (
+                "Heure typique : "
+                f"{habit.get('typical_time')}"
+            )
+        )
+
+        lines.append("")
+        lines.append(
+            "Actions :"
+        )
+
+        actions = habit.get(
+            "actions",
+            []
+        )
+
+        for index, action_data in enumerate(
+            actions,
+            start=1
+        ):
+
+            lines.append(
+                (
+                    f"  {index}. "
+                    f"{action_data.get('action')} "
+                    f"-> "
+                    f"{action_data.get('target')}"
+                )
+            )
+
+        lines.append("")
+
+        lines.append(
+            (
+                "Modifier : "
+                f"modifie l'habitude {habit_id}"
+            )
+        )
+
+        lines.append(
+            (
+                "Accepter : "
+                f"accepte l'habitude {habit_id}"
+            )
+        )
+
+        lines.append(
+            (
+                "Refuser : "
+                f"refuse l'habitude {habit_id}"
+            )
+        )
+
+        lines.append(
+            "-" * 55
+        )
+
+    return "\n".join(
+        lines
+    )
+
+
+# ============================================================
+# CREATION / OUVERTURE D'UN BROUILLON
+# ============================================================
+
+def open_habit_draft(
+    proposal_id
+):
+
+    success, draft, message = (
+        create_habit_draft(
+            proposal_id
+        )
+    )
+
+    if not success:
+
+        return (
+            False,
+            message
+        )
+
+    if not isinstance(
+        draft,
+        dict
+    ):
+
+        return (
+            False,
+            (
+                "Le brouillon n'a pas pu "
+                "être chargé."
+            )
+        )
+
+    return (
+        True,
+        (
+            f"{message}\n\n"
+            f"{format_habit_draft(draft)}\n\n"
+            "Aucune modification n'a encore "
+            "été appliquée à routines.json."
+        )
+    )
+
+
+# ============================================================
+# AFFICHAGE D'UN BROUILLON
+# ============================================================
+
+def show_habit_draft(
+    proposal_id
+):
+
+    draft = get_habit_draft(
+        proposal_id
+    )
+
+    if draft is None:
+
+        return (
+            False,
+            (
+                "Aucun brouillon pour "
+                "cette habitude."
+            )
+        )
+
+    return (
+        True,
+        format_habit_draft(
+            draft
+        )
+    )
+
+
+# ============================================================
+# RESULTAT APRES MODIFICATION
+# ============================================================
+
+def format_draft_change_result(
+    proposal_id,
+    success,
+    message
+):
+
+    if not success:
+
+        return (
+            False,
+            message
+        )
+
+    draft = get_habit_draft(
+        proposal_id
+    )
+
+    if draft is None:
+
+        return (
+            True,
+            message
+        )
+
+    return (
+        True,
+        (
+            f"{message}\n\n"
+            f"{format_habit_draft(draft)}"
+        )
+    )
+
+
+# ============================================================
+# EXECUTION D'UNE ACTION
+# ============================================================
+
+def execute_action(
+    action_data
+):
+
+    valid, error = validate_action(
+        action_data
+    )
+
+    if not valid:
+
+        return (
+            False,
+            error
+        )
+
+    action = (
+        action_data[
+            "action"
+        ]
+        .lower()
+        .strip()
+    )
+
+    target = (
+        action_data[
+            "target"
+        ]
+        .lower()
+        .strip()
+    )
+
+    params = action_data.get(
+        "params",
+        {}
+    )
+
+    # ========================================================
+    # APPLICATION
+    # ========================================================
 
     if action == "open_application":
 
@@ -513,25 +971,271 @@ def execute_action(action_data):
             target
         )
 
-    # --------------------------------------------------------
-    # VERIFIER UNE APPLICATION
-    # --------------------------------------------------------
+    # ========================================================
+    # VERIFICATION APPLICATION
+    # ========================================================
 
     if action == "check_application":
 
-        return is_application_running(
+        running, message = (
+            is_application_running(
+                target
+            )
+        )
+
+        return (
+            True,
+            message
+        )
+
+    # ========================================================
+    # LISTER UN DOSSIER AUTORISE
+    # ========================================================
+
+    if action == "list_directory":
+
+        return list_directory(
             target
         )
 
-    # --------------------------------------------------------
-    # TOUT LE RESTE EST INTERDIT
-    # --------------------------------------------------------
+    # ========================================================
+    # CREER UN DOSSIER AUTORISE
+    # ========================================================
+
+    if action == "create_folder":
+
+        return create_folder(
+            target,
+            params["name"],
+            explicit_user_command=True
+        )
+
+    # ========================================================
+    # DEPLACER UN FICHIER
+    # ========================================================
+
+    if action == "move_file_within_root":
+
+        return move_file_within_root(
+            target,
+            params["file_name"],
+            params["destination_folder"],
+            explicit_user_command=True
+        )
+
+    # ========================================================
+    # SITE
+    # ========================================================
+
+    if action == "open_website":
+
+        return open_website(
+            target
+        )
+
+    # ========================================================
+    # ROUTINE
+    # ========================================================
+
+    if action == "run_routine":
+
+        success, results = (
+            execute_routine(
+                target
+            )
+        )
+
+        if not results:
+
+            return (
+                success,
+                (
+                    "La routine n'a retourné "
+                    "aucun résultat."
+                )
+            )
+
+        return (
+            success,
+            "\n".join(
+                results
+            )
+        )
+
+    # ========================================================
+    # LISTE DES HABITUDES
+    # ========================================================
+
+    if action == "list_habits":
+
+        return (
+            True,
+            format_pending_habits()
+        )
+
+    # ========================================================
+    # MODIFIER UNE HABITUDE
+    # ========================================================
+
+    if action == "modify_habit":
+
+        return open_habit_draft(
+            int(target)
+        )
+
+    # ========================================================
+    # AFFICHER LE BROUILLON
+    # ========================================================
+
+    if action == "show_habit_draft":
+
+        return show_habit_draft(
+            int(target)
+        )
+
+    # ========================================================
+    # RENOMMER LE BROUILLON
+    # ========================================================
+
+    if action == "rename_habit_draft":
+
+        success, message = (
+            update_habit_draft_name(
+                int(target),
+                params["name"]
+            )
+        )
+
+        return format_draft_change_result(
+            int(target),
+            success,
+            message
+        )
+
+    # ========================================================
+    # AJOUTER UNE ACTION
+    # ========================================================
+
+    if action == "add_habit_draft_action":
+
+        success, message = (
+            add_habit_draft_action(
+                int(target),
+                params["action"],
+                params["target"]
+            )
+        )
+
+        return format_draft_change_result(
+            int(target),
+            success,
+            message
+        )
+
+    # ========================================================
+    # RETIRER UNE ACTION
+    # ========================================================
+
+    if action == "remove_habit_draft_action":
+
+        success, message = (
+            remove_habit_draft_action(
+                int(target),
+                params["action"],
+                params["target"]
+            )
+        )
+
+        return format_draft_change_result(
+            int(target),
+            success,
+            message
+        )
+
+    # ========================================================
+    # CHANGER LE DECLENCHEUR
+    # ========================================================
+
+    if action == "set_habit_draft_trigger":
+
+        success, message = (
+            set_habit_draft_trigger(
+                int(target),
+                params["trigger"]
+            )
+        )
+
+        return format_draft_change_result(
+            int(target),
+            success,
+            message
+        )
+
+    # ========================================================
+    # ANNULER LA MODIFICATION
+    # ========================================================
+
+    if action == "cancel_habit_draft":
+
+        return delete_habit_draft(
+            int(target)
+        )
+
+    # ========================================================
+    # CONFIRMER LE BROUILLON
+    # ========================================================
+
+    if action == "confirm_habit_draft":
+
+        return confirm_habit_draft(
+            int(target)
+        )
+
+    # ========================================================
+    # ACCEPTER UNE HABITUDE
+    # ========================================================
+
+    if action == "accept_habit":
+
+        if get_habit_draft(
+            int(target)
+        ) is not None:
+
+            return (
+                False,
+                (
+                    "Cette habitude possède "
+                    "un brouillon de modification.\n"
+                    "L'acceptation directe est bloquée "
+                    "pour éviter de perdre "
+                    "les modifications du brouillon."
+                )
+            )
+
+        return accept_habit(
+            int(target)
+        )
+
+    # ========================================================
+    # REFUSER UNE HABITUDE
+    # ========================================================
+
+    if action == "reject_habit":
+
+        return reject_habit(
+            int(target)
+        )
+
+    # ========================================================
+    # SECURITE
+    # ========================================================
 
     return (
         False,
         (
-            "Action inconnue ou "
-            f"interdite : {action}"
+            "Action autorisée mais "
+            "aucun exécuteur n'est défini : "
+            f"{action}"
         )
     )
 
@@ -540,136 +1244,329 @@ def execute_action(action_data):
 # EXECUTION DE PLUSIEURS ACTIONS
 # ============================================================
 
-def execute_actions(actions):
-    """
-    Exécute toutes les actions
-    l'une après l'autre.
+def execute_actions(
+    actions
+):
 
-    L'échec d'une action
-    n'empêche pas les suivantes.
-    """
+    display_results = []
 
-    results = []
+    activity_results = []
 
     for action_data in actions:
 
-        success, message = (
-            execute_action(
-                action_data
-            )
+        valid, error = validate_action(
+            action_data
         )
+
+        if not valid:
+
+            display_results.append(
+                (
+                    "REFUSE : "
+                    f"{error}"
+                )
+            )
+
+            continue
+
+        action = (
+            action_data[
+                "action"
+            ]
+            .lower()
+            .strip()
+        )
+
+        target = (
+            action_data[
+                "target"
+            ]
+            .lower()
+            .strip()
+        )
+
+        success, message = execute_action(
+            action_data
+        )
+
+        # ----------------------------------------------------
+        # AFFICHAGE
+        # ----------------------------------------------------
 
         if success:
 
-            results.append(
-                f"OK : {message}"
+            display_results.append(
+                message
             )
 
         else:
 
-            results.append(
-                f"REFUSE : {message}"
+            display_results.append(
+                (
+                    "REFUSE : "
+                    f"{message}"
+                )
             )
 
-    return results
+        # ----------------------------------------------------
+        # APPRENTISSAGE
+        # ----------------------------------------------------
 
+        if action in LEARNABLE_AGENT_ACTIONS:
 
-# ============================================================
-# TRAITEMENT D'UNE INSTRUCTION
-# ============================================================
+            activity_results.append({
+                "action": action,
+                "target": target,
+                "success": bool(
+                    success
+                ),
+            })
 
-def process_instruction(user_message):
-    """
-    Chaîne complète :
-
-    Utilisateur
-        ↓
-    LLM
-        ↓
-    ACTION_REQUEST
-        ↓
-    Python
-        ↓
-    Permissions
-        ↓
-    Windows
-        ↓
-    Résultats réels
-    """
-
-    llm_response, error = (
-        ask_llm(
-            user_message
-        )
+    return (
+        display_results,
+        activity_results
     )
 
-    if error:
 
-        return (
-            f"ERREUR : {error}"
+# ============================================================
+# APPRENTISSAGE
+# ============================================================
+
+def learn_from_actions(
+    activity_results
+):
+
+    if not is_learning_enabled():
+        return []
+
+    if not activity_results:
+        return []
+
+    try:
+
+        previous_pending = (
+            get_pending_habits()
         )
 
-    # --------------------------------------------------------
-    # DEBUG
-    # --------------------------------------------------------
+        previous_ids = {
+            habit["id"]
+            for habit in previous_pending
+        }
+
+        recorded, result = record_session(
+            activity_results,
+            source="manual"
+        )
+
+        if DEBUG:
+
+            if recorded:
+
+                print(
+                    "[APPRENTISSAGE] "
+                    "Session manuelle enregistrée."
+                )
+
+            else:
+
+                print(
+                    "[APPRENTISSAGE] "
+                    f"{result}"
+                )
+
+        if not recorded:
+
+            return []
+
+        current_pending = (
+            get_pending_habits()
+        )
+
+        return [
+            habit
+            for habit in current_pending
+            if habit["id"] not in previous_ids
+        ]
+
+    except Exception as error:
+
+        if DEBUG:
+
+            print(
+                "[APPRENTISSAGE] "
+                "Erreur non bloquante : "
+                f"{error}"
+            )
+
+        return []
+
+
+# ============================================================
+# NOTIFICATION HABITUDE
+# ============================================================
+
+def format_habit_notification(
+    habit
+):
+
+    habit_id = habit.get(
+        "id"
+    )
+
+    return (
+        "\n"
+        "=======================================================\n"
+        "HABITUDE DETECTEE\n"
+        "=======================================================\n"
+        f"ID : {habit_id}\n"
+        f"Nom : {habit.get('title')}\n"
+        f"Occurrences : {habit.get('occurrences')}\n"
+        f"Jours : {habit.get('distinct_days')}\n"
+        f"Heure typique : {habit.get('typical_time')}\n\n"
+        f"Modifier : modifie l'habitude {habit_id}\n"
+        f"Accepter : accepte l'habitude {habit_id}\n"
+        f"Refuser : refuse l'habitude {habit_id}"
+    )
+
+
+# ============================================================
+# INTERPRETATION
+# ============================================================
+
+def interpret_instruction(
+    user_message
+):
+
+    result = interpret_backend(
+        user_message
+    )
 
     if DEBUG:
 
         print()
 
         print(
-            "----- REPONSE BRUTE DU LLM -----"
+            "----- INTERPRETATION BACKEND -----"
         )
 
         print(
-            llm_response
+            json.dumps(
+                result,
+                ensure_ascii=False,
+                indent=2
+            )
         )
 
         print(
-            "--------------------------------"
+            "----------------------------------"
         )
 
         print()
 
-    # --------------------------------------------------------
-    # EXTRACTION DE TOUTES LES ACTIONS
-    # --------------------------------------------------------
+    return result
 
-    actions = extract_actions(
-        llm_response
+
+# ============================================================
+# TRAITEMENT
+# ============================================================
+
+def process_instruction(
+    user_message
+):
+
+    result = interpret_instruction(
+        user_message
     )
 
-    # --------------------------------------------------------
-    # AUCUNE ACTION :
-    # CONVERSATION NORMALE
-    # --------------------------------------------------------
+    if not isinstance(
+        result,
+        dict
+    ):
+
+        return (
+            "ERREUR : format backend invalide."
+        )
+
+    actions = result.get(
+        "actions",
+        []
+    )
+
+    if not isinstance(
+        actions,
+        list
+    ):
+
+        actions = []
 
     if not actions:
-        return llm_response
 
-    # --------------------------------------------------------
-    # EXECUTION DE TOUTES LES ACTIONS
-    # --------------------------------------------------------
+        reply = result.get(
+            "reply"
+        )
 
-    results = execute_actions(
-        actions
+        if (
+            isinstance(
+                reply,
+                str
+            )
+            and reply.strip()
+        ):
+
+            return reply.strip()
+
+        error = result.get(
+            "error"
+        )
+
+        if error:
+
+            return (
+                "ERREUR D'INTERPRETATION : "
+                f"{error}"
+            )
+
+        return (
+            "Je suis actuellement en mode "
+            "déterministe et je n'ai pas "
+            "reconnu cette instruction."
+        )
+
+    display_results, activity_results = (
+        execute_actions(
+            actions
+        )
     )
 
-    return "\n".join(
-        results
+    new_habits = learn_from_actions(
+        activity_results
+    )
+
+    for habit in new_habits:
+
+        display_results.append(
+            format_habit_notification(
+                habit
+            )
+        )
+
+    return "\n\n".join(
+        display_results
     )
 
 
 # ============================================================
-# INTERFACE CONSOLE
+# INTERFACE
 # ============================================================
 
 def main():
 
+    status = get_backend_status()
+
     print()
 
     print(
-        "=" * 58
+        "=" * 65
     )
 
     print(
@@ -677,79 +1574,70 @@ def main():
     )
 
     print(
-        "LLM local + moteur de permissions Windows"
+        "Multi-backend + routines + apprentissage"
     )
 
     print(
-        "=" * 58
-    )
-
-    print()
-
-    print(
-        "Mode : LOCAL"
-    )
-
-    print(
-        "LLM : Qwen3.5 0.8B"
-    )
-
-    print(
-        "Internet LLM : désactivé"
-    )
-
-    print(
-        "Accès fichiers : désactivé"
-    )
-
-    print(
-        "Shell libre : désactivé"
+        "=" * 65
     )
 
     print()
 
     print(
-        "Applications disponibles :"
+        "Backend actif :",
+        status.get(
+            "selected",
+            "aucun"
+        )
     )
 
     print(
-        "  - Edge"
-    )
-
-    print(
-        "  - VS Code"
-    )
-
-    print()
-
-    print(
-        "Exemples :"
-    )
-
-    print(
-        "  ouvre Edge"
-    )
-
-    print(
-        "  ouvre VS Code"
-    )
-
-    print(
-        "  ouvre Edge et VS Code"
-    )
-
-    print(
-        "  vérifie si Edge est ouvert"
-    )
-
-    print(
-        "  vérifie si VS Code est ouvert"
+        "Apprentissage :",
+        (
+            "activé"
+            if is_learning_enabled()
+            else "désactivé"
+        )
     )
 
     print()
 
     print(
-        "Tape 'quit' pour arrêter AgentLocal."
+        "Commandes de test :"
+    )
+
+    print(
+        "  ouvre github"
+    )
+
+    print(
+        "  ouvre l'explorateur"
+    )
+
+    print(
+        "  liste mes documents"
+    )
+
+    print(
+        "  crée un dossier Factures dans Documents"
+    )
+
+    print(
+        "  déplace facture.pdf dans Factures"
+    )
+
+    print(
+        "  prépare mon environnement de travail"
+    )
+
+    print(
+        "  affiche mes habitudes"
+    )
+
+    print()
+
+    print(
+        "Tape 'quit' pour arrêter."
     )
 
     print()
@@ -763,7 +1651,7 @@ def main():
         try:
 
             user_message = input(
-                "Vous > "
+                "A vous de commencer > "
             ).strip()
 
         except (
@@ -772,23 +1660,13 @@ def main():
         ):
 
             print()
-
             print(
                 "AgentLocal arrêté."
             )
-
             break
-
-        # ----------------------------------------------------
-        # MESSAGE VIDE
-        # ----------------------------------------------------
 
         if not user_message:
             continue
-
-        # ----------------------------------------------------
-        # ARRET
-        # ----------------------------------------------------
 
         if user_message.lower() in {
             "quit",
@@ -798,16 +1676,10 @@ def main():
         }:
 
             print()
-
             print(
                 "AgentLocal arrêté."
             )
-
             break
-
-        # ----------------------------------------------------
-        # ANALYSE
-        # ----------------------------------------------------
 
         print()
 
@@ -815,15 +1687,11 @@ def main():
             "Analyse..."
         )
 
+        print()
+
         result = process_instruction(
             user_message
         )
-
-        # ----------------------------------------------------
-        # RESULTAT
-        # ----------------------------------------------------
-
-        print()
 
         print(
             "AgentLocal >"
@@ -841,4 +1709,5 @@ def main():
 # ============================================================
 
 if __name__ == "__main__":
+
     main()

@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "active_profile": "office",
+  "profiles": {
+    "office": {
+      "name": "PC de bureau",
+      "startup_enabled": false,
+      "startup_routine": "work_start"
+    },
+    "personal": {
+      "name": "PC personnel",
+      "startup_enabled": false,
+      "startup_routine": null
+    }
+  },
+  "routines": {
+    "work_start": {
+      "name": "Préparer mon environnement de travail",
+      "enabled": true,
+      "confirmed": true,
+      "triggers": [
+        "prépare mon environnement de travail",
+        "prépare mon espace de travail",
+        "prépare mon bureau",
+        "lance ma routine de travail",
+        "routine travail"
+      ],
+      "actions": [
+        {
+          "action": "open_application",
+          "target": "vscode"
+        },
+        {
+          "action": "open_website",
+          "target": "udmci"
+        },
+        {
+          "action": "open_website",
+          "target": "teams"
+        },
+        {
+          "action": "open_website",
+          "target": "outlook"
+        },
+        {
+          "action": "open_website",
+          "target": "github"
+        },
+        {
+          "action": "open_website",
+          "target": "chatgpt"
+        }
+      ]
+    }
+  }
+}

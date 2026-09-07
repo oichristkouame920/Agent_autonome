@@ -28,12 +28,14 @@ PERMISSIONS_FILE = (
 PROCESS_MAP = {
     "edge": "msedge.exe",
     "vscode": "Code.exe",
+    "explorer": "explorer.exe",
 }
 
 
 DISPLAY_NAMES = {
     "edge": "Edge",
     "vscode": "VS Code",
+    "explorer": "Explorateur de fichiers",
 }
 
 
@@ -57,7 +59,7 @@ def load_permissions():
             return json.load(file)
 
     except (
-        FileNotFoundError,
+        OSError,
         json.JSONDecodeError
     ):
         return {}
@@ -185,7 +187,7 @@ def has_visible_window(
 
             dwmapi.DwmGetWindowAttribute(
                 hwnd,
-                14,  # DWMWA_CLOAKED
+                14,
                 ctypes.byref(cloaked),
                 ctypes.sizeof(cloaked)
             )
@@ -195,6 +197,39 @@ def has_visible_window(
 
         except Exception:
             pass
+
+        # ----------------------------------------------------
+        # EXPLORATEUR DE FICHIERS WINDOWS
+        # ----------------------------------------------------
+
+        if app_name == "explorer":
+
+            class_buffer = ctypes.create_unicode_buffer(
+                256
+            )
+
+            user32.GetClassNameW(
+                hwnd,
+                class_buffer,
+                256
+            )
+
+            window_class = (
+                class_buffer.value
+                .strip()
+            )
+
+            # explorer.exe tourne en permanence pour le bureau
+            # Windows. On cherche donc uniquement une vraie
+            # fenêtre de navigation dans les fichiers.
+            if window_class in {
+                "CabinetWClass",
+                "ExploreWClass",
+            }:
+                found.value = True
+                return False
+
+            return True
 
         # ----------------------------------------------------
         # Titre de la fenêtre
@@ -278,10 +313,6 @@ def is_application_running(app_name):
         .strip()
     )
 
-    # --------------------------------------------------------
-    # Application connue ?
-    # --------------------------------------------------------
-
     if app_name not in PROCESS_MAP:
 
         return (
@@ -291,10 +322,6 @@ def is_application_running(app_name):
                 f"non autorisée : {app_name}"
             )
         )
-
-    # --------------------------------------------------------
-    # Permission de vérification ?
-    # --------------------------------------------------------
 
     if not get_application_permission(
         app_name,
@@ -322,20 +349,12 @@ def is_application_running(app_name):
         app_name
     )
 
-    # --------------------------------------------------------
-    # Aucun processus
-    # --------------------------------------------------------
-
     if not process_ids:
 
         return (
             False,
             f"{display_name} est fermé."
         )
-
-    # --------------------------------------------------------
-    # Une vraie fenêtre est visible
-    # --------------------------------------------------------
 
     if has_visible_window(
         process_ids,
@@ -346,10 +365,6 @@ def is_application_running(app_name):
             True,
             f"{display_name} est ouvert."
         )
-
-    # --------------------------------------------------------
-    # Processus en arrière-plan uniquement
-    # --------------------------------------------------------
 
     return (
         False,
@@ -365,10 +380,6 @@ def is_application_running(app_name):
 # ============================================================
 
 def find_edge():
-    """
-    Recherche Microsoft Edge uniquement
-    dans ses emplacements standards.
-    """
 
     candidates = []
 
@@ -384,10 +395,6 @@ def find_edge():
         "LOCALAPPDATA"
     )
 
-    # --------------------------------------------------------
-    # Program Files
-    # --------------------------------------------------------
-
     if program_files:
 
         candidates.append(
@@ -397,10 +404,6 @@ def find_edge():
             / "Application"
             / "msedge.exe"
         )
-
-    # --------------------------------------------------------
-    # Program Files (x86)
-    # --------------------------------------------------------
 
     if program_files_x86:
 
@@ -412,10 +415,6 @@ def find_edge():
             / "msedge.exe"
         )
 
-    # --------------------------------------------------------
-    # Installation utilisateur
-    # --------------------------------------------------------
-
     if local_app_data:
 
         candidates.append(
@@ -425,10 +424,6 @@ def find_edge():
             / "Application"
             / "msedge.exe"
         )
-
-    # --------------------------------------------------------
-    # Premier chemin existant
-    # --------------------------------------------------------
 
     for path in candidates:
 
@@ -443,10 +438,6 @@ def find_edge():
 # ============================================================
 
 def find_vscode():
-    """
-    Recherche Visual Studio Code uniquement
-    dans ses emplacements standards.
-    """
 
     candidates = []
 
@@ -462,10 +453,6 @@ def find_vscode():
         "ProgramFiles(x86)"
     )
 
-    # --------------------------------------------------------
-    # Installation utilisateur
-    # --------------------------------------------------------
-
     if local_app_data:
 
         candidates.append(
@@ -475,10 +462,6 @@ def find_vscode():
             / "Code.exe"
         )
 
-    # --------------------------------------------------------
-    # Installation système 64 bits
-    # --------------------------------------------------------
-
     if program_files:
 
         candidates.append(
@@ -487,10 +470,6 @@ def find_vscode():
             / "Code.exe"
         )
 
-    # --------------------------------------------------------
-    # Installation système 32 bits
-    # --------------------------------------------------------
-
     if program_files_x86:
 
         candidates.append(
@@ -498,10 +477,6 @@ def find_vscode():
             / "Microsoft VS Code"
             / "Code.exe"
         )
-
-    # --------------------------------------------------------
-    # Premier chemin existant
-    # --------------------------------------------------------
 
     for path in candidates:
 
@@ -512,23 +487,48 @@ def find_vscode():
 
 
 # ============================================================
+# RECHERCHE DE L'EXPLORATEUR DE FICHIERS
+# ============================================================
+
+def find_explorer():
+    """
+    Recherche explorer.exe uniquement dans
+    le dossier Windows du système.
+    """
+
+    windows_dir = (
+        os.environ.get("WINDIR")
+        or os.environ.get("SystemRoot")
+    )
+
+    if not windows_dir:
+        return None
+
+    executable = (
+        Path(windows_dir)
+        / "explorer.exe"
+    )
+
+    if executable.exists():
+        return executable
+
+    return None
+
+
+# ============================================================
 # RECHERCHE GENERALE D'UNE APPLICATION
 # ============================================================
 
 def find_application(app_name):
-    """
-    Retourne uniquement l'exécutable
-    d'une application connue.
-
-    Le LLM ne peut pas fournir lui-même
-    un chemin d'exécutable arbitraire.
-    """
 
     if app_name == "edge":
         return find_edge()
 
     if app_name == "vscode":
         return find_vscode()
+
+    if app_name == "explorer":
+        return find_explorer()
 
     return None
 
@@ -539,34 +539,17 @@ def find_application(app_name):
 
 def launch_detached(executable):
     """
-    Lance une application graphique comme processus
-    indépendant d'AgentLocal.
-
-    Ainsi, lorsque AgentLocal s'arrête,
-    l'application lancée doit rester ouverte.
+    Lance l'application sans passer
+    par PowerShell ni cmd.exe.
     """
 
     subprocess.Popen(
         [str(executable)],
-
-        # Aucun passage par cmd.exe ou PowerShell.
         shell=False,
-
-        # L'application n'utilise pas l'entrée
-        # standard d'AgentLocal.
         stdin=subprocess.DEVNULL,
-
-        # Les logs de l'application ne polluent
-        # pas la console AgentLocal.
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-
-        # Ne conserve pas les descripteurs
-        # de fichiers du processus parent.
         close_fds=True,
-
-        # Nouveau groupe de processus
-        # + détachement de la console AgentLocal.
         creationflags=(
             subprocess.CREATE_NEW_PROCESS_GROUP
             | subprocess.DETACHED_PROCESS
@@ -579,13 +562,6 @@ def launch_detached(executable):
 # ============================================================
 
 def open_application(app_name):
-    """
-    Ouvre uniquement une application connue
-    et explicitement autorisée.
-
-    L'application est lancée indépendamment
-    d'AgentLocal.
-    """
 
     app_name = (
         app_name
@@ -594,7 +570,7 @@ def open_application(app_name):
     )
 
     # --------------------------------------------------------
-    # Application connue ?
+    # Application connue
     # --------------------------------------------------------
 
     if app_name not in PROCESS_MAP:
@@ -608,7 +584,7 @@ def open_application(app_name):
         )
 
     # --------------------------------------------------------
-    # Permission can_open ?
+    # Permission
     # --------------------------------------------------------
 
     if not get_application_permission(
@@ -630,7 +606,7 @@ def open_application(app_name):
     )
 
     # --------------------------------------------------------
-    # Application déjà ouverte ?
+    # Déjà ouvert ?
     # --------------------------------------------------------
 
     if get_application_permission(
@@ -652,7 +628,7 @@ def open_application(app_name):
             )
 
     # --------------------------------------------------------
-    # Recherche de l'exécutable
+    # Exécutable
     # --------------------------------------------------------
 
     executable = find_application(
@@ -670,7 +646,7 @@ def open_application(app_name):
         )
 
     # --------------------------------------------------------
-    # LANCEMENT DETACHE
+    # Lancement
     # --------------------------------------------------------
 
     try:
@@ -702,16 +678,24 @@ def open_application(app_name):
 if __name__ == "__main__":
 
     print()
-    print("=" * 55)
-    print("TEST WINDOWS_TOOLS")
-    print("=" * 55)
 
-    # --------------------------------------------------------
-    # EDGE
-    # --------------------------------------------------------
+    print(
+        "=" * 55
+    )
+
+    print(
+        "TEST WINDOWS_TOOLS"
+    )
+
+    print(
+        "=" * 55
+    )
 
     print()
-    print("Edge :")
+
+    print(
+        "Edge :"
+    )
 
     running, message = (
         is_application_running(
@@ -720,17 +704,17 @@ if __name__ == "__main__":
     )
 
     print(message)
+
     print(
         "Fenêtre ouverte :",
         running
     )
 
-    # --------------------------------------------------------
-    # VS CODE
-    # --------------------------------------------------------
-
     print()
-    print("VS Code :")
+
+    print(
+        "VS Code :"
+    )
 
     running, message = (
         is_application_running(
@@ -739,6 +723,26 @@ if __name__ == "__main__":
     )
 
     print(message)
+
+    print(
+        "Fenêtre ouverte :",
+        running
+    )
+
+    print()
+
+    print(
+        "Explorateur de fichiers :"
+    )
+
+    running, message = (
+        is_application_running(
+            "explorer"
+        )
+    )
+
+    print(message)
+
     print(
         "Fenêtre ouverte :",
         running

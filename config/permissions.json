@@ -1,4 +1,6 @@
 {
+  "schema_version": 1,
+
   "applications": {
     "edge": {
       "enabled": true,
@@ -12,14 +14,67 @@
       "can_check": true,
       "can_open": true,
       "can_close": false
+    },
+
+    "explorer": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": false
     }
   },
 
   "filesystem": {
-    "enabled": false,
-    "read": false,
-    "write": false,
-    "delete": false
+    "enabled": true,
+
+    "roots": {
+      "desktop": {
+        "enabled": true,
+        "can_list": true,
+        "can_read_metadata": true,
+        "can_create_folder": false,
+        "can_move_within_root": false
+      },
+
+      "documents": {
+        "enabled": true,
+        "can_list": true,
+        "can_read_metadata": true,
+        "can_create_folder": true,
+        "can_move_within_root": true
+      },
+
+      "downloads": {
+        "enabled": true,
+        "can_list": true,
+        "can_read_metadata": true,
+        "can_create_folder": false,
+        "can_move_within_root": false
+      }
+    },
+
+    "can_read_content": false,
+    "can_rename": false,
+    "can_copy": false,
+    "can_delete": false,
+
+    "creation_policy": {
+      "require_explicit_user_command": true,
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_automatic_creation": false
+    },
+
+    "move_policy": {
+      "require_explicit_user_command": true,
+      "same_root_only": true,
+      "source_must_be_direct_child": true,
+      "destination_must_be_existing_subfolder": true,
+      "allow_overwrite": false,
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_automatic_move": false
+    }
   },
 
   "shell": {

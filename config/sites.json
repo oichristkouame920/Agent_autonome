@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "websites": {
+    "udmci": {
+      "enabled": true,
+      "url": "https://foad.udmci-enligne.ci/Formation/"
+    },
+    "teams": {
+      "enabled": true,
+      "url": "https://teams.microsoft.com/"
+    },
+    "outlook": {
+      "enabled": true,
+      "url": "https://outlook.office365.com/"
+    },
+    "outlook-perso": {
+      "enabled": true,
+      "url": "https://outlook.live.com/"
+    },
+    "sharepoint": {
+      "enabled": true,
+      "url": "https://univmetiers.sharepoint.com/sites/PIGIERCIFASCICULES/FASCICULES/"
+    },
+    "onedrive": {
+      "enabled": true,
+      "url": "https://www.onedrive.com/"
+    },
+    "microsoft365": {
+      "enabled": true,
+      "url": "https://m365.cloud.microsoft/"
+    },
+    "office": {
+      "enabled": true,
+      "url": "https://m365.cloud.microsoft/"
+    },
+    "word": {
+      "enabled": true,
+      "url": "https://word.cloud.microsoft/"
+    },
+    "excel": {
+      "enabled": true,
+      "url": "https://excel.cloud.microsoft/"
+    },
+    "powerpoint": {
+      "enabled": true,
+      "url": "https://powerpoint.cloud.microsoft/"
+    },
+    "onenote": {
+      "enabled": true,
+      "url": "https://www.onenote.com/notebooks"
+    },
+    "microsoftforms": {
+      "enabled": true,
+      "url": "https://forms.cloud.microsoft/"
+    },
+    "todo": {
+      "enabled": true,
+      "url": "https://to-do.office.com/"
+    },
+    "planner": {
+      "enabled": true,
+      "url": "https://planner.cloud.microsoft/"
+    },
+    "copilot": {
+      "enabled": true,
+      "url": "https://copilot.microsoft.com/"
+    },
+    "gmail": {
+      "enabled": true,
+      "url": "https://mail.google.com/"
+    },
+    "drive": {
+      "enabled": true,
+      "url": "https://drive.google.com/"
+    },
+    "googledrive": {
+      "enabled": true,
+      "url": "https://drive.google.com/"
+    },
+    "docs": {
+      "enabled": true,
+      "url": "https://docs.google.com/"
+    },
+    "sheets": {
+      "enabled": true,
+      "url": "https://sheets.google.com/"
+    },
+    "slides": {
+      "enabled": true,
+      "url": "https://slides.google.com/"
+    },
+    "meet": {
+      "enabled": true,
+      "url": "https://meet.google.com/"
+    },
+    "calendar": {
+      "enabled": true,
+      "url": "https://calendar.google.com/"
+    },
+    "googlechat": {
+      "enabled": true,
+      "url": "https://chat.google.com/"
+    },
+    "googleforms": {
+      "enabled": true,
+      "url": "https://forms.google.com/"
+    },
+    "contacts": {
+      "enabled": true,
+      "url": "https://contacts.google.com/"
+    },
+    "keep": {
+      "enabled": true,
+      "url": "https://keep.google.com/"
+    },
+    "classroom": {
+      "enabled": true,
+      "url": "https://classroom.google.com/"
+    },
+    "photos": {
+      "enabled": true,
+      "url": "https://photos.google.com/"
+    },
+    "maps": {
+      "enabled": true,
+      "url": "https://maps.google.com/"
+    },
+    "translate": {
+      "enabled": true,
+      "url": "https://translate.google.com/"
+    },
+    "gemini": {
+      "enabled": true,
+      "url": "https://gemini.google.com/"
+    }
+  }
+}
