@@ -33,7 +33,9 @@
         "can_list": true,
         "can_read_metadata": true,
         "can_create_folder": false,
-        "can_move_within_root": false
+        "can_move_within_root": false,
+        "can_move_out": true,
+        "can_receive_move": true
       },
 
       "documents": {
@@ -41,7 +43,9 @@
         "can_list": true,
         "can_read_metadata": true,
         "can_create_folder": true,
-        "can_move_within_root": true
+        "can_move_within_root": true,
+        "can_move_out": true,
+        "can_receive_move": true
       },
 
       "downloads": {
@@ -49,7 +53,39 @@
         "can_list": true,
         "can_read_metadata": true,
         "can_create_folder": false,
-        "can_move_within_root": false
+        "can_move_within_root": false,
+        "can_move_out": true,
+        "can_receive_move": true
+      },
+
+      "pictures": {
+        "enabled": true,
+        "can_list": true,
+        "can_read_metadata": true,
+        "can_create_folder": false,
+        "can_move_within_root": false,
+        "can_move_out": true,
+        "can_receive_move": true
+      },
+
+      "videos": {
+        "enabled": true,
+        "can_list": true,
+        "can_read_metadata": true,
+        "can_create_folder": false,
+        "can_move_within_root": false,
+        "can_move_out": true,
+        "can_receive_move": true
+      },
+
+      "music": {
+        "enabled": true,
+        "can_list": true,
+        "can_read_metadata": true,
+        "can_create_folder": false,
+        "can_move_within_root": false,
+        "can_move_out": true,
+        "can_receive_move": true
       }
     },
 
@@ -57,6 +93,7 @@
     "can_rename": false,
     "can_copy": false,
     "can_delete": false,
+    "can_execute_files": false,
 
     "creation_policy": {
       "require_explicit_user_command": true,
@@ -74,6 +111,111 @@
       "allow_from_routine": false,
       "allow_from_habit": false,
       "allow_automatic_move": false
+    },
+
+    "cross_root_move_policy": {
+      "enabled": true,
+      "require_explicit_user_command": true,
+
+      "allow_between_enabled_user_roots": true,
+
+      "source_must_be_direct_child": true,
+      "destination_subfolder_optional": true,
+      "destination_subfolder_must_exist": true,
+      "allow_overwrite": false,
+
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_automatic_move": false
+    },
+
+    "security_policy": {
+      "deny_by_default": true,
+
+      "allow_absolute_paths_from_user": false,
+      "allow_relative_paths_from_user": false,
+      "allow_wildcards": false,
+      "allow_recursive_operations": false,
+      "allow_mass_operations": false,
+
+      "follow_symbolic_links": false,
+      "follow_junctions": false,
+      "follow_reparse_points": false,
+
+      "allow_hidden_system_files": false,
+      "allow_alternate_data_streams": false,
+
+      "protect_windows_directory": true,
+      "protect_program_files": true,
+      "protect_program_files_x86": true,
+      "protect_program_data": true,
+      "protect_appdata": true,
+      "protect_user_profile_root": true,
+      "protect_recycle_bin": true,
+      "protect_agent_project": true,
+
+      "block_executable_file_types": true,
+      "block_script_file_types": true,
+      "block_shortcut_file_types": true
+    },
+
+    "blocked_extensions": [
+      ".exe",
+      ".com",
+      ".bat",
+      ".cmd",
+      ".ps1",
+      ".psm1",
+      ".vbs",
+      ".vbe",
+      ".js",
+      ".jse",
+      ".wsf",
+      ".wsh",
+      ".scr",
+      ".msi",
+      ".msp",
+      ".msc",
+      ".cpl",
+      ".dll",
+      ".sys",
+      ".reg",
+      ".lnk",
+      ".url",
+      ".hta",
+      ".jar"
+    ],
+
+    "media_categories": {
+      "images": [
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".webp",
+        ".gif",
+        ".bmp",
+        ".tif",
+        ".tiff"
+      ],
+
+      "videos": [
+        ".mp4",
+        ".mkv",
+        ".mov",
+        ".avi",
+        ".webm",
+        ".m4v"
+      ],
+
+      "audio": [
+        ".mp3",
+        ".wav",
+        ".flac",
+        ".m4a",
+        ".aac",
+        ".ogg",
+        ".wma"
+      ]
     }
   },
 

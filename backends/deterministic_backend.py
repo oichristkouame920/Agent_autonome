@@ -1,7 +1,6 @@
 import json
 import re
 import unicodedata
-
 from pathlib import Path
 
 
@@ -67,7 +66,7 @@ APPLICATION_ALIASES = {
 
 
 # ============================================================
-# DOSSIERS FICHIERS
+# DOSSIERS UTILISATEUR
 # ============================================================
 
 FILE_ROOT_ALIASES = {
@@ -77,17 +76,38 @@ FILE_ROOT_ALIASES = {
     "desktop": "desktop",
 
     # Documents
-    "documents": "documents",
     "document": "documents",
+    "documents": "documents",
     "mes documents": "documents",
-    "mon document": "documents",
 
     # Téléchargements
-    "telechargements": "downloads",
     "telechargement": "downloads",
+    "telechargements": "downloads",
     "mes telechargements": "downloads",
-    "downloads": "downloads",
     "download": "downloads",
+    "downloads": "downloads",
+
+    # Images
+    "image": "pictures",
+    "images": "pictures",
+    "mes images": "pictures",
+    "photo": "pictures",
+    "photos": "pictures",
+    "mes photos": "pictures",
+    "picture": "pictures",
+    "pictures": "pictures",
+
+    # Vidéos
+    "video": "videos",
+    "videos": "videos",
+    "mes videos": "videos",
+
+    # Musique
+    "musique": "music",
+    "musiques": "music",
+    "ma musique": "music",
+    "mes musiques": "music",
+    "music": "music",
 }
 
 
@@ -183,9 +203,7 @@ WEBSITE_ALIASES = {
 # NORMALISATION
 # ============================================================
 
-def remove_accents(
-    text
-):
+def remove_accents(text):
 
     normalized = unicodedata.normalize(
         "NFKD",
@@ -201,15 +219,12 @@ def remove_accents(
     )
 
 
-def normalize_text(
-    text
-):
+def normalize_text(text):
 
     if not isinstance(
         text,
         str
     ):
-
         return ""
 
     text = (
@@ -237,7 +252,7 @@ def normalize_text(
 
 
 # ============================================================
-# CONSTRUCTION ACTION
+# ACTION
 # ============================================================
 
 def make_action(
@@ -270,7 +285,6 @@ def make_action(
 def load_site_names():
 
     if not SITES_FILE.exists():
-
         return set()
 
     try:
@@ -312,14 +326,12 @@ def load_site_names():
             config,
             dict
         ):
-
             continue
 
         if not config.get(
             "enabled",
             False
         ):
-
             continue
 
         normalized = normalize_text(
@@ -336,13 +348,12 @@ def load_site_names():
 
 
 # ============================================================
-# DECLENCHEURS DES ROUTINES
+# ROUTINES
 # ============================================================
 
 def load_routine_triggers():
 
     if not ROUTINES_FILE.exists():
-
         return {}
 
     try:
@@ -384,21 +395,18 @@ def load_routine_triggers():
             routine,
             dict
         ):
-
             continue
 
         if not routine.get(
             "enabled",
             False
         ):
-
             continue
 
         if not routine.get(
             "confirmed",
             False
         ):
-
             continue
 
         triggers = routine.get(
@@ -410,7 +418,6 @@ def load_routine_triggers():
             triggers,
             list
         ):
-
             continue
 
         for trigger in triggers:
@@ -419,7 +426,6 @@ def load_routine_triggers():
                 trigger,
                 str
             ):
-
                 continue
 
             normalized = normalize_text(
@@ -440,7 +446,7 @@ def load_routine_triggers():
 
 
 # ============================================================
-# CIBLES
+# NORMALISATION DES CIBLES
 # ============================================================
 
 def normalize_application_target(
@@ -474,7 +480,6 @@ def normalize_website_target(
     )
 
     if not value:
-
         return None
 
     alias = WEBSITE_ALIASES.get(
@@ -482,20 +487,13 @@ def normalize_website_target(
     )
 
     if alias:
-
         return alias
 
     if value in load_site_names():
-
         return value
 
     if re.fullmatch(
-        (
-            r"[a-z0-9]"
-            r"[a-z0-9.-]*"
-            r"\."
-            r"[a-z]{2,63}"
-        ),
+        r"[a-z0-9][a-z0-9.-]*\.[a-z]{2,63}",
         value
     ):
 
@@ -548,7 +546,7 @@ def resolve_learnable_target(
 
 
 # ============================================================
-# COMMANDES HABITUDES
+# HABITUDES
 # ============================================================
 
 def parse_habit_command(
@@ -559,9 +557,9 @@ def parse_habit_command(
         user_message
     )
 
-    # ========================================================
-    # LISTE
-    # ========================================================
+    # --------------------------------------------------------
+    # Liste
+    # --------------------------------------------------------
 
     if text in {
         "affiche mes habitudes",
@@ -579,16 +577,15 @@ def parse_habit_command(
             )
         ]
 
-    # ========================================================
-    # CONFIRMER MODIFICATION
-    # ========================================================
+    # --------------------------------------------------------
+    # Confirmer
+    # --------------------------------------------------------
 
     confirm_patterns = [
         (
             r"^(?:confirme|confirmer|valide|valider) "
             r"la modification de l'?habitude (\d+)$"
         ),
-
         (
             r"^(?:confirme|confirmer|valide|valider) "
             r"le brouillon de l'?habitude (\d+)$"
@@ -611,9 +608,9 @@ def parse_habit_command(
                 )
             ]
 
-    # ========================================================
-    # AFFICHER BROUILLON
-    # ========================================================
+    # --------------------------------------------------------
+    # Afficher brouillon
+    # --------------------------------------------------------
 
     match = re.fullmatch(
         (
@@ -632,9 +629,9 @@ def parse_habit_command(
             )
         ]
 
-    # ========================================================
-    # ANNULER BROUILLON
-    # ========================================================
+    # --------------------------------------------------------
+    # Annuler
+    # --------------------------------------------------------
 
     match = re.fullmatch(
         (
@@ -653,9 +650,9 @@ def parse_habit_command(
             )
         ]
 
-    # ========================================================
-    # RENOMMER
-    # ========================================================
+    # --------------------------------------------------------
+    # Renommer
+    # --------------------------------------------------------
 
     rename_match = re.match(
         (
@@ -684,9 +681,9 @@ def parse_habit_command(
             )
         ]
 
-    # ========================================================
-    # CHANGER NOM
-    # ========================================================
+    # --------------------------------------------------------
+    # Changer nom
+    # --------------------------------------------------------
 
     rename_match = re.match(
         (
@@ -716,9 +713,9 @@ def parse_habit_command(
             )
         ]
 
-    # ========================================================
-    # DECLENCHEUR
-    # ========================================================
+    # --------------------------------------------------------
+    # Déclencheur
+    # --------------------------------------------------------
 
     trigger_match = re.match(
         (
@@ -748,9 +745,9 @@ def parse_habit_command(
             )
         ]
 
-    # ========================================================
-    # AJOUT ACTION
-    # ========================================================
+    # --------------------------------------------------------
+    # Ajouter action
+    # --------------------------------------------------------
 
     add_match = re.match(
         (
@@ -795,9 +792,9 @@ def parse_habit_command(
                 )
             ]
 
-    # ========================================================
-    # RETRAIT ACTION
-    # ========================================================
+    # --------------------------------------------------------
+    # Retirer action
+    # --------------------------------------------------------
 
     remove_match = re.match(
         (
@@ -842,9 +839,9 @@ def parse_habit_command(
                 )
             ]
 
-    # ========================================================
-    # MODIFIER / OUVRIR BROUILLON
-    # ========================================================
+    # --------------------------------------------------------
+    # Modifier
+    # --------------------------------------------------------
 
     for pattern in [
         r"^(?:modifie|modifier) l'?habitude (\d+)$",
@@ -866,9 +863,9 @@ def parse_habit_command(
                 )
             ]
 
-    # ========================================================
-    # ACCEPTATION DIRECTE
-    # ========================================================
+    # --------------------------------------------------------
+    # Accepter
+    # --------------------------------------------------------
 
     for pattern in [
         r"^(?:accepte|accepter) l'?habitude (\d+)$",
@@ -889,9 +886,9 @@ def parse_habit_command(
                 )
             ]
 
-    # ========================================================
-    # REFUS
-    # ========================================================
+    # --------------------------------------------------------
+    # Refuser
+    # --------------------------------------------------------
 
     for pattern in [
         r"^(?:refuse|refuser) l'?habitude (\d+)$",
@@ -931,7 +928,6 @@ def parse_run_routine(
     )
 
     if not routine_id:
-
         return []
 
     return [
@@ -966,7 +962,6 @@ def parse_check_application(
         )
 
         if not match:
-
             continue
 
         target = (
@@ -1024,7 +1019,7 @@ def split_targets(
 
 
 # ============================================================
-# LISTER UN DOSSIER AUTORISE
+# LISTER UN DOSSIER
 # ============================================================
 
 def parse_list_directory(
@@ -1039,7 +1034,7 @@ def parse_list_directory(
         r"^(?:liste|lister) (.+)$",
         r"^(?:affiche|afficher) (.+)$",
         r"^(?:montre|montrer) (.+)$",
-        r"^(?:voir) (.+)$",
+        r"^voir (.+)$",
     ]
 
     for pattern in patterns:
@@ -1101,6 +1096,15 @@ def parse_create_folder(
     user_message
 ):
 
+    root_pattern = (
+        r"bureau|desktop|"
+        r"documents?|"
+        r"téléchargements?|telechargements?|downloads?|"
+        r"images?|photos?|pictures?|"
+        r"vidéos?|videos?|"
+        r"musiques?|music"
+    )
+
     pattern = (
         r"^\s*"
         r"(?:crée|cree|créer|creer)"
@@ -1110,10 +1114,10 @@ def parse_create_folder(
         r"\s+"
         r"(.+?)"
         r"\s+dans\s+"
-        r"(?:(?:mes|mon|le|la|les)\s+)?"
-        r"(documents?|bureau|"
-        r"téléchargements?|telechargements?|"
-        r"downloads?|desktop)"
+        r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+        r"("
+        + root_pattern
+        + r")"
         r"\s*[.!?]?\s*$"
     )
 
@@ -1124,7 +1128,6 @@ def parse_create_folder(
     )
 
     if not match:
-
         return []
 
     folder_name = (
@@ -1133,12 +1136,16 @@ def parse_create_folder(
         .strip()
     )
 
-    root_name = normalize_file_root(
-        match.group(2)
+    root_name = (
+        normalize_file_root(
+            match.group(2)
+        )
     )
 
-    if not root_name:
+    if not folder_name:
+        return []
 
+    if not root_name:
         return []
 
     return [
@@ -1153,24 +1160,198 @@ def parse_create_folder(
 
 
 # ============================================================
-# DEPLACER UN FICHIER DANS DOCUMENTS
+# DEPLACER ENTRE RACINES
+# ============================================================
+
+def parse_move_file_between_roots(
+    user_message
+):
+
+    root_pattern = (
+        r"bureau|desktop|"
+        r"documents?|"
+        r"téléchargements?|telechargements?|downloads?|"
+        r"images?|photos?|pictures?|"
+        r"vidéos?|videos?|"
+        r"musiques?|music"
+    )
+
+    # ========================================================
+    # AVEC SOUS-DOSSIER
+    # ========================================================
+
+    pattern_with_folder = (
+        r"^\s*"
+        r"(?:déplace|deplace|déplacer|deplacer)"
+        r"\s+"
+        r"(?:(?:le|la)\s+fichier\s+)?"
+        r"(.+?)"
+        r"\s+"
+        r"(?:de|du|des)"
+        r"\s+"
+        r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+        r"("
+        + root_pattern
+        + r")"
+        r"\s+"
+        r"(?:vers|dans)"
+        r"\s+"
+        r"(?:(?:le|un)\s+dossier\s+)"
+        r"(.+?)"
+        r"\s+"
+        r"(?:dans|de|du|des)"
+        r"\s+"
+        r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+        r"("
+        + root_pattern
+        + r")"
+        r"\s*[.!?]?\s*$"
+    )
+
+    match = re.fullmatch(
+        pattern_with_folder,
+        user_message,
+        flags=re.IGNORECASE
+    )
+
+    if match:
+
+        file_name = (
+            match
+            .group(1)
+            .strip()
+        )
+
+        source_root = (
+            normalize_file_root(
+                match.group(2)
+            )
+        )
+
+        destination_folder = (
+            match
+            .group(3)
+            .strip()
+        )
+
+        destination_root = (
+            normalize_file_root(
+                match.group(4)
+            )
+        )
+
+        if (
+            file_name
+            and
+            source_root
+            and
+            destination_folder
+            and
+            destination_root
+            and
+            source_root != destination_root
+        ):
+
+            return [
+                make_action(
+                    "move_file_between_roots",
+                    source_root,
+                    {
+                        "source_root": source_root,
+                        "destination_root": destination_root,
+                        "file_name": file_name,
+                        "destination_folder": destination_folder,
+                    }
+                )
+            ]
+
+    # ========================================================
+    # DIRECTEMENT VERS UNE AUTRE RACINE
+    # ========================================================
+
+    pattern_direct = (
+        r"^\s*"
+        r"(?:déplace|deplace|déplacer|deplacer)"
+        r"\s+"
+        r"(?:(?:le|la)\s+fichier\s+)?"
+        r"(.+?)"
+        r"\s+"
+        r"(?:de|du|des)"
+        r"\s+"
+        r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+        r"("
+        + root_pattern
+        + r")"
+        r"\s+"
+        r"(?:vers|dans)"
+        r"\s+"
+        r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+        r"("
+        + root_pattern
+        + r")"
+        r"\s*[.!?]?\s*$"
+    )
+
+    match = re.fullmatch(
+        pattern_direct,
+        user_message,
+        flags=re.IGNORECASE
+    )
+
+    if not match:
+        return []
+
+    file_name = (
+        match
+        .group(1)
+        .strip()
+    )
+
+    source_root = (
+        normalize_file_root(
+            match.group(2)
+        )
+    )
+
+    destination_root = (
+        normalize_file_root(
+            match.group(3)
+        )
+    )
+
+    if not file_name:
+        return []
+
+    if not source_root:
+        return []
+
+    if not destination_root:
+        return []
+
+    if source_root == destination_root:
+        return []
+
+    return [
+        make_action(
+            "move_file_between_roots",
+            source_root,
+            {
+                "source_root": source_root,
+                "destination_root": destination_root,
+                "file_name": file_name,
+                "destination_folder": None,
+            }
+        )
+    ]
+
+
+# ============================================================
+# DEPLACEMENT INTERNE DANS DOCUMENTS
 # ============================================================
 
 def parse_move_file(
     user_message
 ):
-    """
-    Interprète uniquement un déplacement contrôlé
-    à l'intérieur de Documents.
-
-    Exemples :
-        déplace facture.pdf dans Factures
-        déplace le fichier facture.pdf dans le dossier Factures
-        déplace rapport.docx vers Archives
-
-    La sécurité réelle reste appliquée par file_tools.py
-    et permissions.json.
-    """
 
     pattern = (
         r"^\s*"
@@ -1193,7 +1374,6 @@ def parse_move_file(
     )
 
     if not match:
-
         return []
 
     file_name = (
@@ -1212,6 +1392,13 @@ def parse_move_file(
         return []
 
     if not destination_folder:
+        return []
+
+    # Ne pas confondre avec un déplacement
+    # vers une racine utilisateur.
+    if normalize_file_root(
+        destination_folder
+    ):
         return []
 
     return [
@@ -1263,7 +1450,6 @@ def parse_open(
             break
 
     if not content:
-
         return []
 
     for prefix in [
@@ -1302,7 +1488,6 @@ def parse_open(
         )
 
         if not action:
-
             continue
 
         key = (
@@ -1311,7 +1496,6 @@ def parse_open(
         )
 
         if key in seen:
-
             continue
 
         seen.add(
@@ -1398,7 +1582,17 @@ def interpret(
         )
 
     # --------------------------------------------------------
-    # Déplacement fichier
+    # Déplacement entre racines
+    # --------------------------------------------------------
+
+    if not actions:
+
+        actions = parse_move_file_between_roots(
+            user_message
+        )
+
+    # --------------------------------------------------------
+    # Déplacement interne Documents
     # --------------------------------------------------------
 
     if not actions:
@@ -1408,7 +1602,7 @@ def interpret(
         )
 
     # --------------------------------------------------------
-    # Ouverture application / site
+    # Application / site
     # --------------------------------------------------------
 
     if not actions:

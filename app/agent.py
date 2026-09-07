@@ -5,13 +5,10 @@ import sys
 from pathlib import Path
 
 
-# ============================================================
-# CHEMINS
-# ============================================================
-
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
 if str(ROOT_DIR) not in sys.path:
+
     sys.path.insert(
         0,
         str(ROOT_DIR)
@@ -35,6 +32,7 @@ from windows_tools import (
 from file_tools import (
     create_folder,
     list_directory,
+    move_file_between_roots,
     move_file_within_root,
 )
 
@@ -58,7 +56,7 @@ from routine_tools import (
 
 
 # ============================================================
-# HABITUDES / BROUILLONS
+# HABITUDES
 # ============================================================
 
 from habit_tools import (
@@ -76,7 +74,7 @@ from habit_tools import (
 
 
 # ============================================================
-# DECISIONS SUR LES HABITUDES
+# DECISIONS HABITUDES
 # ============================================================
 
 from habit_decision_tools import (
@@ -87,7 +85,7 @@ from habit_decision_tools import (
 
 
 # ============================================================
-# BACKENDS
+# BACKEND
 # ============================================================
 
 from backends.backend_manager import (
@@ -96,10 +94,6 @@ from backends.backend_manager import (
     load_agent_config,
 )
 
-
-# ============================================================
-# CONFIGURATION
-# ============================================================
 
 SCHEMA_VERSION = 1
 
@@ -111,27 +105,23 @@ DEBUG = True
 # ============================================================
 
 SUPPORTED_ACTIONS = {
-    # Applications
     "open_application",
     "check_application",
 
-    # Web
     "open_website",
 
-    # Fichiers
     "list_directory",
     "create_folder",
-    "move_file_within_root",
 
-    # Routines
+    "move_file_within_root",
+    "move_file_between_roots",
+
     "run_routine",
 
-    # Habitudes
     "list_habits",
     "modify_habit",
     "show_habit_draft",
 
-    # Modification des brouillons
     "rename_habit_draft",
     "add_habit_draft_action",
     "remove_habit_draft_action",
@@ -139,14 +129,13 @@ SUPPORTED_ACTIONS = {
     "cancel_habit_draft",
     "confirm_habit_draft",
 
-    # Décisions
     "accept_habit",
     "reject_habit",
 }
 
 
 # ============================================================
-# ACTIONS QUI PEUVENT ETRE APPRISES
+# ACTIONS APPRENABLES
 # ============================================================
 
 LEARNABLE_AGENT_ACTIONS = {
@@ -156,7 +145,7 @@ LEARNABLE_AGENT_ACTIONS = {
 
 
 # ============================================================
-# CONFIGURATION GENERALE
+# CONFIGURATION
 # ============================================================
 
 def get_agent_config():
@@ -167,14 +156,11 @@ def get_agent_config():
         config,
         dict
     ):
+
         return {}
 
     return config
 
-
-# ============================================================
-# APPRENTISSAGE ACTIVE ?
-# ============================================================
 
 def is_learning_enabled():
 
@@ -189,6 +175,7 @@ def is_learning_enabled():
         learning,
         dict
     ):
+
         return False
 
     return bool(
@@ -200,16 +187,10 @@ def is_learning_enabled():
 
 
 # ============================================================
-# VALIDATION D'UNE ACTION
+# VALIDATION
 # ============================================================
 
-def validate_action(
-    action_data
-):
-
-    # --------------------------------------------------------
-    # FORMAT
-    # --------------------------------------------------------
+def validate_action(action_data):
 
     if not isinstance(
         action_data,
@@ -220,10 +201,6 @@ def validate_action(
             False,
             "Format d'action invalide."
         )
-
-    # --------------------------------------------------------
-    # VERSION
-    # --------------------------------------------------------
 
     schema_version = action_data.get(
         "schema_version"
@@ -238,10 +215,6 @@ def validate_action(
                 f"non supportée : {schema_version}"
             )
         )
-
-    # --------------------------------------------------------
-    # ACTION
-    # --------------------------------------------------------
 
     action = action_data.get(
         "action"
@@ -280,10 +253,6 @@ def validate_action(
             )
         )
 
-    # --------------------------------------------------------
-    # CIBLE
-    # --------------------------------------------------------
-
     target = action_data.get(
         "target"
     )
@@ -312,7 +281,7 @@ def validate_action(
         )
 
     # ========================================================
-    # IDENTIFIANTS D'HABITUDES
+    # HABITUDES
     # ========================================================
 
     habit_actions = {
@@ -340,10 +309,6 @@ def validate_action(
                 )
             )
 
-    # ========================================================
-    # LISTE DES HABITUDES
-    # ========================================================
-
     if action == "list_habits":
 
         if target != "pending":
@@ -357,7 +322,7 @@ def validate_action(
             )
 
     # ========================================================
-    # ROUTINE
+    # ROUTINES
     # ========================================================
 
     if action == "run_routine":
@@ -400,6 +365,7 @@ def validate_action(
         "list_directory",
         "create_folder",
         "move_file_within_root",
+        "move_file_between_roots",
     }:
 
         if target not in {
@@ -415,10 +381,6 @@ def validate_action(
                     "interdite ou inconnue."
                 )
             )
-
-    # ========================================================
-    # PARAMETRES
-    # ========================================================
 
     params = action_data.get(
         "params",
@@ -438,9 +400,9 @@ def validate_action(
             "Paramètres invalides."
         )
 
-    # --------------------------------------------------------
-    # CREATION D'UN DOSSIER
-    # --------------------------------------------------------
+    # ========================================================
+    # CREATION DOSSIER
+    # ========================================================
 
     if action == "create_folder":
 
@@ -474,9 +436,9 @@ def validate_action(
                 "Le nom du dossier est trop long."
             )
 
-    # --------------------------------------------------------
-    # DEPLACEMENT D'UN FICHIER
-    # --------------------------------------------------------
+    # ========================================================
+    # DEPLACEMENT INTERNE
+    # ========================================================
 
     if action == "move_file_within_root":
 
@@ -488,9 +450,10 @@ def validate_action(
             "destination_folder"
         )
 
-        if not isinstance(
-            file_name,
-            str
+        if (
+            not isinstance(file_name, str)
+            or
+            not file_name.strip()
         ):
 
             return (
@@ -498,9 +461,13 @@ def validate_action(
                 "Nom de fichier invalide."
             )
 
-        if not isinstance(
-            destination_folder,
-            str
+        if (
+            not isinstance(
+                destination_folder,
+                str
+            )
+            or
+            not destination_folder.strip()
         ):
 
             return (
@@ -508,50 +475,182 @@ def validate_action(
                 "Dossier destination invalide."
             )
 
-        file_name = file_name.strip()
-
-        destination_folder = (
-            destination_folder
-            .strip()
-        )
-
-        if not file_name:
-
-            return (
-                False,
-                "Le nom du fichier est vide."
-            )
-
-        if not destination_folder:
-
-            return (
-                False,
-                (
-                    "Le nom du dossier "
-                    "destination est vide."
-                )
-            )
-
-        if len(file_name) > 180:
+        if len(file_name.strip()) > 180:
 
             return (
                 False,
                 "Le nom du fichier est trop long."
             )
 
-        if len(destination_folder) > 180:
+        if len(
+            destination_folder.strip()
+        ) > 180:
 
             return (
                 False,
                 (
-                    "Le nom du dossier destination "
-                    "est trop long."
+                    "Le nom du dossier "
+                    "destination est trop long."
                 )
             )
 
-    # --------------------------------------------------------
+    # ========================================================
+    # DEPLACEMENT ENTRE RACINES
+    # ========================================================
+
+    if action == "move_file_between_roots":
+
+        source_root = params.get(
+            "source_root"
+        )
+
+        destination_root = params.get(
+            "destination_root"
+        )
+
+        file_name = params.get(
+            "file_name"
+        )
+
+        destination_folder = params.get(
+            "destination_folder"
+        )
+
+        allowed_roots = {
+            "desktop",
+            "documents",
+            "downloads",
+        }
+
+        if not isinstance(
+            source_root,
+            str
+        ):
+
+            return (
+                False,
+                "Racine source invalide."
+            )
+
+        if not isinstance(
+            destination_root,
+            str
+        ):
+
+            return (
+                False,
+                "Racine destination invalide."
+            )
+
+        source_root = (
+            source_root
+            .strip()
+            .lower()
+        )
+
+        destination_root = (
+            destination_root
+            .strip()
+            .lower()
+        )
+
+        if source_root not in allowed_roots:
+
+            return (
+                False,
+                (
+                    "Racine source "
+                    "interdite ou inconnue."
+                )
+            )
+
+        if destination_root not in allowed_roots:
+
+            return (
+                False,
+                (
+                    "Racine destination "
+                    "interdite ou inconnue."
+                )
+            )
+
+        # Sécurité supplémentaire :
+        # target doit toujours correspondre à la source.
+        if source_root != target:
+
+            return (
+                False,
+                (
+                    "Incohérence entre la cible "
+                    "et la racine source."
+                )
+            )
+
+        if source_root == destination_root:
+
+            return (
+                False,
+                (
+                    "Les deux racines doivent "
+                    "être différentes."
+                )
+            )
+
+        if (
+            not isinstance(file_name, str)
+            or
+            not file_name.strip()
+        ):
+
+            return (
+                False,
+                "Nom de fichier invalide."
+            )
+
+        if len(file_name.strip()) > 180:
+
+            return (
+                False,
+                "Le nom du fichier est trop long."
+            )
+
+        if destination_folder is not None:
+
+            if not isinstance(
+                destination_folder,
+                str
+            ):
+
+                return (
+                    False,
+                    "Dossier destination invalide."
+                )
+
+            destination_folder = (
+                destination_folder
+                .strip()
+            )
+
+            if not destination_folder:
+
+                return (
+                    False,
+                    "Dossier destination invalide."
+                )
+
+            if len(destination_folder) > 180:
+
+                return (
+                    False,
+                    (
+                        "Le nom du dossier "
+                        "destination est trop long."
+                    )
+                )
+
+    # ========================================================
     # RENOMMAGE HABITUDE
-    # --------------------------------------------------------
+    # ========================================================
 
     if action == "rename_habit_draft":
 
@@ -585,9 +684,9 @@ def validate_action(
                 "Le nouveau nom est trop long."
             )
 
-    # --------------------------------------------------------
+    # ========================================================
     # DECLENCHEUR HABITUDE
-    # --------------------------------------------------------
+    # ========================================================
 
     if action == "set_habit_draft_trigger":
 
@@ -621,9 +720,9 @@ def validate_action(
                 "Le déclencheur est trop long."
             )
 
-    # --------------------------------------------------------
-    # AJOUT / RETRAIT ACTION HABITUDE
-    # --------------------------------------------------------
+    # ========================================================
+    # ACTION BROUILLON HABITUDE
+    # ========================================================
 
     if action in {
         "add_habit_draft_action",
@@ -687,7 +786,7 @@ def validate_action(
 
 
 # ============================================================
-# FORMAT DES HABITUDES EN ATTENTE
+# HABITUDES EN ATTENTE
 # ============================================================
 
 def format_pending_habits():
@@ -714,22 +813,17 @@ def format_pending_habits():
         )
 
         lines.append("")
+
         lines.append(
             f"ID : {habit_id}"
         )
 
         lines.append(
-            (
-                "Nom : "
-                f"{habit.get('title')}"
-            )
+            f"Nom : {habit.get('title')}"
         )
 
         lines.append(
-            (
-                "Profil : "
-                f"{habit.get('profile')}"
-            )
+            f"Profil : {habit.get('profile')}"
         )
 
         lines.append(
@@ -754,6 +848,7 @@ def format_pending_habits():
         )
 
         lines.append("")
+
         lines.append(
             "Actions :"
         )
@@ -772,7 +867,7 @@ def format_pending_habits():
                 (
                     f"  {index}. "
                     f"{action_data.get('action')} "
-                    f"-> "
+                    "-> "
                     f"{action_data.get('target')}"
                 )
             )
@@ -810,12 +905,10 @@ def format_pending_habits():
 
 
 # ============================================================
-# CREATION / OUVERTURE D'UN BROUILLON
+# BROUILLONS HABITUDES
 # ============================================================
 
-def open_habit_draft(
-    proposal_id
-):
+def open_habit_draft(proposal_id):
 
     success, draft, message = (
         create_habit_draft(
@@ -854,13 +947,7 @@ def open_habit_draft(
     )
 
 
-# ============================================================
-# AFFICHAGE D'UN BROUILLON
-# ============================================================
-
-def show_habit_draft(
-    proposal_id
-):
+def show_habit_draft(proposal_id):
 
     draft = get_habit_draft(
         proposal_id
@@ -883,10 +970,6 @@ def show_habit_draft(
         )
     )
 
-
-# ============================================================
-# RESULTAT APRES MODIFICATION
-# ============================================================
 
 def format_draft_change_result(
     proposal_id,
@@ -922,12 +1005,10 @@ def format_draft_change_result(
 
 
 # ============================================================
-# EXECUTION D'UNE ACTION
+# EXECUTION ACTION
 # ============================================================
 
-def execute_action(
-    action_data
-):
+def execute_action(action_data):
 
     valid, error = validate_action(
         action_data
@@ -971,10 +1052,6 @@ def execute_action(
             target
         )
 
-    # ========================================================
-    # VERIFICATION APPLICATION
-    # ========================================================
-
     if action == "check_application":
 
         running, message = (
@@ -989,7 +1066,7 @@ def execute_action(
         )
 
     # ========================================================
-    # LISTER UN DOSSIER AUTORISE
+    # FICHIERS
     # ========================================================
 
     if action == "list_directory":
@@ -998,10 +1075,6 @@ def execute_action(
             target
         )
 
-    # ========================================================
-    # CREER UN DOSSIER AUTORISE
-    # ========================================================
-
     if action == "create_folder":
 
         return create_folder(
@@ -1009,10 +1082,6 @@ def execute_action(
             params["name"],
             explicit_user_command=True
         )
-
-    # ========================================================
-    # DEPLACER UN FICHIER
-    # ========================================================
 
     if action == "move_file_within_root":
 
@@ -1023,8 +1092,22 @@ def execute_action(
             explicit_user_command=True
         )
 
+    if action == "move_file_between_roots":
+
+        return move_file_between_roots(
+            params["source_root"],
+            params["destination_root"],
+            params["file_name"],
+            destination_folder_name=(
+                params.get(
+                    "destination_folder"
+                )
+            ),
+            explicit_user_command=True
+        )
+
     # ========================================================
-    # SITE
+    # WEB
     # ========================================================
 
     if action == "open_website":
@@ -1057,13 +1140,11 @@ def execute_action(
 
         return (
             success,
-            "\n".join(
-                results
-            )
+            "\n".join(results)
         )
 
     # ========================================================
-    # LISTE DES HABITUDES
+    # HABITUDES
     # ========================================================
 
     if action == "list_habits":
@@ -1073,29 +1154,17 @@ def execute_action(
             format_pending_habits()
         )
 
-    # ========================================================
-    # MODIFIER UNE HABITUDE
-    # ========================================================
-
     if action == "modify_habit":
 
         return open_habit_draft(
             int(target)
         )
 
-    # ========================================================
-    # AFFICHER LE BROUILLON
-    # ========================================================
-
     if action == "show_habit_draft":
 
         return show_habit_draft(
             int(target)
         )
-
-    # ========================================================
-    # RENOMMER LE BROUILLON
-    # ========================================================
 
     if action == "rename_habit_draft":
 
@@ -1111,10 +1180,6 @@ def execute_action(
             success,
             message
         )
-
-    # ========================================================
-    # AJOUTER UNE ACTION
-    # ========================================================
 
     if action == "add_habit_draft_action":
 
@@ -1132,10 +1197,6 @@ def execute_action(
             message
         )
 
-    # ========================================================
-    # RETIRER UNE ACTION
-    # ========================================================
-
     if action == "remove_habit_draft_action":
 
         success, message = (
@@ -1152,10 +1213,6 @@ def execute_action(
             message
         )
 
-    # ========================================================
-    # CHANGER LE DECLENCHEUR
-    # ========================================================
-
     if action == "set_habit_draft_trigger":
 
         success, message = (
@@ -1171,29 +1228,17 @@ def execute_action(
             message
         )
 
-    # ========================================================
-    # ANNULER LA MODIFICATION
-    # ========================================================
-
     if action == "cancel_habit_draft":
 
         return delete_habit_draft(
             int(target)
         )
 
-    # ========================================================
-    # CONFIRMER LE BROUILLON
-    # ========================================================
-
     if action == "confirm_habit_draft":
 
         return confirm_habit_draft(
             int(target)
         )
-
-    # ========================================================
-    # ACCEPTER UNE HABITUDE
-    # ========================================================
 
     if action == "accept_habit":
 
@@ -1216,19 +1261,11 @@ def execute_action(
             int(target)
         )
 
-    # ========================================================
-    # REFUSER UNE HABITUDE
-    # ========================================================
-
     if action == "reject_habit":
 
         return reject_habit(
             int(target)
         )
-
-    # ========================================================
-    # SECURITE
-    # ========================================================
 
     return (
         False,
@@ -1241,12 +1278,10 @@ def execute_action(
 
 
 # ============================================================
-# EXECUTION DE PLUSIEURS ACTIONS
+# EXECUTION MULTIPLE
 # ============================================================
 
-def execute_actions(
-    actions
-):
+def execute_actions(actions):
 
     display_results = []
 
@@ -1289,10 +1324,6 @@ def execute_actions(
             action_data
         )
 
-        # ----------------------------------------------------
-        # AFFICHAGE
-        # ----------------------------------------------------
-
         if success:
 
             display_results.append(
@@ -1308,18 +1339,14 @@ def execute_actions(
                 )
             )
 
-        # ----------------------------------------------------
-        # APPRENTISSAGE
-        # ----------------------------------------------------
-
+        # Les manipulations fichiers ne sont
+        # volontairement PAS apprenables.
         if action in LEARNABLE_AGENT_ACTIONS:
 
             activity_results.append({
                 "action": action,
                 "target": target,
-                "success": bool(
-                    success
-                ),
+                "success": bool(success),
             })
 
     return (
@@ -1332,9 +1359,7 @@ def execute_actions(
 # APPRENTISSAGE
 # ============================================================
 
-def learn_from_actions(
-    activity_results
-):
+def learn_from_actions(activity_results):
 
     if not is_learning_enabled():
         return []
@@ -1375,7 +1400,6 @@ def learn_from_actions(
                 )
 
         if not recorded:
-
             return []
 
         current_pending = (
@@ -1393,21 +1417,17 @@ def learn_from_actions(
         if DEBUG:
 
             print(
-                "[APPRENTISSAGE] "
-                "Erreur non bloquante : "
-                f"{error}"
+                (
+                    "[APPRENTISSAGE] "
+                    "Erreur non bloquante : "
+                    f"{error}"
+                )
             )
 
         return []
 
 
-# ============================================================
-# NOTIFICATION HABITUDE
-# ============================================================
-
-def format_habit_notification(
-    habit
-):
+def format_habit_notification(habit):
 
     habit_id = habit.get(
         "id"
@@ -1433,9 +1453,7 @@ def format_habit_notification(
 # INTERPRETATION
 # ============================================================
 
-def interpret_instruction(
-    user_message
-):
+def interpret_instruction(user_message):
 
     result = interpret_backend(
         user_message
@@ -1470,9 +1488,7 @@ def interpret_instruction(
 # TRAITEMENT
 # ============================================================
 
-def process_instruction(
-    user_message
-):
+def process_instruction(user_message):
 
     result = interpret_instruction(
         user_message
@@ -1510,7 +1526,8 @@ def process_instruction(
                 reply,
                 str
             )
-            and reply.strip()
+            and
+            reply.strip()
         ):
 
             return reply.strip()
@@ -1611,10 +1628,6 @@ def main():
     )
 
     print(
-        "  ouvre l'explorateur"
-    )
-
-    print(
         "  liste mes documents"
     )
 
@@ -1624,6 +1637,18 @@ def main():
 
     print(
         "  déplace facture.pdf dans Factures"
+    )
+
+    print(
+        "  déplace test.txt de Téléchargements vers Documents"
+    )
+
+    print(
+        "  déplace rapport.pdf de Documents vers Bureau"
+    )
+
+    print(
+        "  déplace image.png du Bureau vers Téléchargements"
     )
 
     print(
@@ -1642,10 +1667,6 @@ def main():
 
     print()
 
-    # ========================================================
-    # BOUCLE PRINCIPALE
-    # ========================================================
-
     while True:
 
         try:
@@ -1663,6 +1684,7 @@ def main():
             print(
                 "AgentLocal arrêté."
             )
+
             break
 
         if not user_message:
@@ -1679,6 +1701,7 @@ def main():
             print(
                 "AgentLocal arrêté."
             )
+
             break
 
         print()
@@ -1703,10 +1726,6 @@ def main():
 
         print()
 
-
-# ============================================================
-# DEMARRAGE
-# ============================================================
 
 if __name__ == "__main__":
 
