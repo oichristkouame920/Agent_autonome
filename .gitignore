@@ -1,0 +1,35 @@
+# Environnement Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Modèles LLM
+models/*.gguf
+
+# llama.cpp compilé / sources locales
+llama.cpp/
+
+# Ancienne version précompilée
+tools/llama.cpp/
+
+# Données locales de l'agent
+logs/
+memory/
+
+# Fichiers temporaires et logs
+*.log
+*.tmp
+*.temp
+
+# Configuration locale VS Code
+.vscode/
+
+# Fichiers Windows
+Thumbs.db
+Desktop.ini
+
+# Secrets éventuels
+.env
+.env.*

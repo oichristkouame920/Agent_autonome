@@ -1,0 +1,29 @@
+{
+  "applications": {
+    "edge": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": false
+    },
+
+    "vscode": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": false
+    }
+  },
+
+  "filesystem": {
+    "enabled": false,
+    "read": false,
+    "write": false,
+    "delete": false
+  },
+
+  "shell": {
+    "powershell_arbitrary": false,
+    "cmd_arbitrary": false
+  }
+}
