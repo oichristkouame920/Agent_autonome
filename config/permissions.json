@@ -1,32 +1,297 @@
 {
   "schema_version": 1,
-
+  "application_policy": {
+    "enabled": true,
+    "deny_by_default": true,
+    "allow_arbitrary_application_names": false,
+    "allow_arbitrary_executable_paths": false,
+    "allow_user_supplied_executable_paths": false,
+    "allow_command_line_arguments_from_user": false,
+    "allow_shell_launch": false,
+    "allow_powershell_launch": false,
+    "allow_cmd_launch": false,
+    "allow_terminal_launch": false,
+    "allow_unknown_applications": false,
+    "allow_installer_launch": false,
+    "allow_admin_tools": false,
+    "allow_elevation": false,
+    "extended_apps_require_explicit_user_command": true,
+    "allow_extended_apps_from_routine": false,
+    "allow_extended_apps_from_habit": false,
+    "allow_close_by_default": false,
+    "hard_blocked_targets": [
+      "cmd",
+      "command_prompt",
+      "powershell",
+      "pwsh",
+      "windows_terminal",
+      "terminal",
+      "regedit",
+      "registry_editor",
+      "msconfig",
+      "services",
+      "services_msc",
+      "task_scheduler",
+      "device_manager",
+      "disk_management",
+      "computer_management",
+      "local_security_policy",
+      "group_policy",
+      "gpedit",
+      "secpol"
+    ],
+    "close_requires_explicit_user_command": true,
+    "allow_close_from_routine": false,
+    "allow_close_from_habit": false,
+    "allow_force_close": false,
+    "allow_process_termination": false
+  },
   "applications": {
     "edge": {
       "enabled": true,
       "can_check": true,
       "can_open": true,
-      "can_close": false
+      "can_close": true,
+      "scope": "core",
+      "allow_from_routine": true,
+      "allow_from_habit": true,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
     },
-
     "vscode": {
       "enabled": true,
       "can_check": true,
       "can_open": true,
-      "can_close": false
+      "can_close": true,
+      "scope": "core",
+      "allow_from_routine": true,
+      "allow_from_habit": true,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
     },
-
     "explorer": {
       "enabled": true,
       "can_check": true,
       "can_open": true,
-      "can_close": false
+      "can_close": true,
+      "scope": "core",
+      "allow_from_routine": true,
+      "allow_from_habit": true,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "android_studio": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "notepad": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "calculator": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "paint": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "snipping_tool": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "photos": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "media_player": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "camera": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "clock": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "sound_recorder": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "sticky_notes": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "clipchamp": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "phone_link": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "teams": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "word": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "excel": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "powerpoint": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "outlook": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
+    "onenote": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
     }
   },
-
   "filesystem": {
     "enabled": true,
-
     "roots": {
       "desktop": {
         "enabled": true,
@@ -35,9 +300,14 @@
         "can_create_folder": false,
         "can_move_within_root": false,
         "can_move_out": true,
-        "can_receive_move": true
+        "can_receive_move": true,
+        "can_rename": true,
+        "can_delete": true,
+        "can_read_content": true,
+        "can_copy_out": true,
+        "can_receive_copy": true,
+        "can_create_file": true
       },
-
       "documents": {
         "enabled": true,
         "can_list": true,
@@ -45,9 +315,14 @@
         "can_create_folder": true,
         "can_move_within_root": true,
         "can_move_out": true,
-        "can_receive_move": true
+        "can_receive_move": true,
+        "can_rename": true,
+        "can_delete": true,
+        "can_read_content": true,
+        "can_copy_out": true,
+        "can_receive_copy": true,
+        "can_create_file": true
       },
-
       "downloads": {
         "enabled": true,
         "can_list": true,
@@ -55,9 +330,14 @@
         "can_create_folder": false,
         "can_move_within_root": false,
         "can_move_out": true,
-        "can_receive_move": true
+        "can_receive_move": true,
+        "can_rename": true,
+        "can_delete": true,
+        "can_read_content": true,
+        "can_copy_out": true,
+        "can_receive_copy": true,
+        "can_create_file": true
       },
-
       "pictures": {
         "enabled": true,
         "can_list": true,
@@ -65,9 +345,14 @@
         "can_create_folder": false,
         "can_move_within_root": false,
         "can_move_out": true,
-        "can_receive_move": true
+        "can_receive_move": true,
+        "can_rename": true,
+        "can_delete": true,
+        "can_read_content": true,
+        "can_copy_out": true,
+        "can_receive_copy": true,
+        "can_create_file": false
       },
-
       "videos": {
         "enabled": true,
         "can_list": true,
@@ -75,9 +360,14 @@
         "can_create_folder": false,
         "can_move_within_root": false,
         "can_move_out": true,
-        "can_receive_move": true
+        "can_receive_move": true,
+        "can_rename": true,
+        "can_delete": true,
+        "can_read_content": true,
+        "can_copy_out": true,
+        "can_receive_copy": true,
+        "can_create_file": false
       },
-
       "music": {
         "enabled": true,
         "can_list": true,
@@ -85,23 +375,26 @@
         "can_create_folder": false,
         "can_move_within_root": false,
         "can_move_out": true,
-        "can_receive_move": true
+        "can_receive_move": true,
+        "can_rename": true,
+        "can_delete": true,
+        "can_read_content": true,
+        "can_copy_out": true,
+        "can_receive_copy": true,
+        "can_create_file": false
       }
     },
-
-    "can_read_content": false,
-    "can_rename": false,
-    "can_copy": false,
-    "can_delete": false,
+    "can_read_content": true,
+    "can_rename": true,
+    "can_copy": true,
+    "can_delete": true,
     "can_execute_files": false,
-
     "creation_policy": {
       "require_explicit_user_command": true,
       "allow_from_routine": false,
       "allow_from_habit": false,
       "allow_automatic_creation": false
     },
-
     "move_policy": {
       "require_explicit_user_command": true,
       "same_root_only": true,
@@ -112,39 +405,217 @@
       "allow_from_habit": false,
       "allow_automatic_move": false
     },
-
     "cross_root_move_policy": {
       "enabled": true,
       "require_explicit_user_command": true,
-
       "allow_between_enabled_user_roots": true,
-
       "source_must_be_direct_child": true,
       "destination_subfolder_optional": true,
       "destination_subfolder_must_exist": true,
       "allow_overwrite": false,
-
       "allow_from_routine": false,
       "allow_from_habit": false,
       "allow_automatic_move": false
     },
-
+    "rename_policy": {
+      "enabled": true,
+      "require_explicit_user_command": true,
+      "files_only": true,
+      "allow_directory_rename": false,
+      "source_must_be_direct_child": true,
+      "same_directory_only": true,
+      "require_root_in_user_command": true,
+      "maximum_items_per_command": 1,
+      "allow_extension_change": false,
+      "allow_case_only_rename": false,
+      "allow_overwrite": false,
+      "allow_wildcards": false,
+      "allow_recursive_rename": false,
+      "allow_mass_rename": false,
+      "allow_hidden_files": false,
+      "allow_system_files": false,
+      "allow_reparse_points": false,
+      "allow_symbolic_links": false,
+      "allow_junctions": false,
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_automatic_rename": false
+    },
+    "delete_policy": {
+      "enabled": true,
+      "require_explicit_user_command": true,
+      "mode": "recycle_bin_only",
+      "allow_permanent_delete": false,
+      "files_only": true,
+      "allow_directory_delete": false,
+      "source_must_be_direct_child": true,
+      "require_root_in_user_command": true,
+      "maximum_items_per_command": 1,
+      "allow_wildcards": false,
+      "allow_recursive_delete": false,
+      "allow_mass_delete": false,
+      "allow_hidden_files": false,
+      "allow_system_files": false,
+      "allow_reparse_points": false,
+      "allow_symbolic_links": false,
+      "allow_junctions": false,
+      "allow_executable_files": false,
+      "allow_script_files": false,
+      "allow_shortcut_files": false,
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_automatic_delete": false,
+      "require_existing_file": true,
+      "confirm_destination_is_recycle_bin": true
+    },
+    "copy_policy": {
+      "enabled": true,
+      "require_explicit_user_command": true,
+      "files_only": true,
+      "source_must_be_direct_child": true,
+      "allow_between_enabled_user_roots": true,
+      "destination_subfolder_optional": true,
+      "destination_subfolder_must_exist": true,
+      "maximum_items_per_command": 1,
+      "preserve_original_filename": true,
+      "allow_rename_during_copy": false,
+      "allow_overwrite": false,
+      "allow_wildcards": false,
+      "allow_recursive_copy": false,
+      "allow_mass_copy": false,
+      "allow_hidden_files": false,
+      "allow_system_files": false,
+      "allow_reparse_points": false,
+      "allow_symbolic_links": false,
+      "allow_junctions": false,
+      "allow_executable_files": false,
+      "allow_script_files": false,
+      "allow_shortcut_files": false,
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_automatic_copy": false,
+      "verify_source_unchanged_after_copy": true
+    },
+    "read_content_policy": {
+      "enabled": true,
+      "require_explicit_user_command": true,
+      "files_only": true,
+      "source_must_be_direct_child": true,
+      "require_root_in_user_command": true,
+      "maximum_items_per_command": 1,
+      "allow_wildcards": false,
+      "allow_recursive_read": false,
+      "allow_mass_read": false,
+      "allow_hidden_files": false,
+      "allow_system_files": false,
+      "allow_reparse_points": false,
+      "allow_symbolic_links": false,
+      "allow_junctions": false,
+      "allow_binary_files": false,
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_automatic_read": false,
+      "maximum_file_size_bytes": 20971520,
+      "maximum_output_characters": 50000,
+      "allowed_extensions": [
+        ".txt",
+        ".md",
+        ".csv",
+        ".tsv",
+        ".json",
+        ".xml",
+        ".yaml",
+        ".yml",
+        ".log",
+        ".ini",
+        ".cfg",
+        ".conf",
+        ".toml",
+        ".ics",
+        ".vcf",
+        ".docx",
+        ".xlsx",
+        ".pptx",
+        ".pdf",
+        ".rtf",
+        ".html",
+        ".htm",
+        ".odt",
+        ".ods",
+        ".odp",
+        ".epub",
+        ".eml"
+      ],
+      "allowed_encodings": [
+        "utf-8",
+        "utf-8-sig",
+        "cp1252"
+      ],
+      "allow_structured_documents": true,
+      "allow_macro_enabled_documents": false,
+      "allow_legacy_binary_office": false,
+      "maximum_archive_entries": 5000,
+      "maximum_archive_relevant_uncompressed_bytes": 33554432,
+      "maximum_archive_single_entry_bytes": 8388608,
+      "maximum_pdf_pages": 100,
+      "allow_encrypted_documents": false
+    },
+    "create_file_policy": {
+      "enabled": true,
+      "require_explicit_user_command": true,
+      "files_only": true,
+      "destination_must_be_direct_child": true,
+      "require_root_in_user_command": true,
+      "maximum_items_per_command": 1,
+      "allow_overwrite": false,
+      "allow_wildcards": false,
+      "allow_recursive_write": false,
+      "allow_mass_write": false,
+      "allow_hidden_files": false,
+      "allow_system_files": false,
+      "allow_reparse_points": false,
+      "allow_symbolic_links": false,
+      "allow_junctions": false,
+      "allow_binary_content": false,
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_automatic_write": false,
+      "maximum_content_bytes": 65536,
+      "encoding": "utf-8",
+      "allowed_extensions": [
+        ".txt",
+        ".md",
+        ".csv",
+        ".tsv",
+        ".json",
+        ".xml",
+        ".yaml",
+        ".yml",
+        ".log",
+        ".ini",
+        ".cfg",
+        ".conf",
+        ".toml",
+        ".ics",
+        ".vcf",
+        ".html",
+        ".htm",
+        ".rtf",
+        ".eml"
+      ]
+    },
     "security_policy": {
       "deny_by_default": true,
-
       "allow_absolute_paths_from_user": false,
       "allow_relative_paths_from_user": false,
       "allow_wildcards": false,
       "allow_recursive_operations": false,
       "allow_mass_operations": false,
-
       "follow_symbolic_links": false,
       "follow_junctions": false,
       "follow_reparse_points": false,
-
       "allow_hidden_system_files": false,
       "allow_alternate_data_streams": false,
-
       "protect_windows_directory": true,
       "protect_program_files": true,
       "protect_program_files_x86": true,
@@ -153,12 +624,10 @@
       "protect_user_profile_root": true,
       "protect_recycle_bin": true,
       "protect_agent_project": true,
-
       "block_executable_file_types": true,
       "block_script_file_types": true,
       "block_shortcut_file_types": true
     },
-
     "blocked_extensions": [
       ".exe",
       ".com",
@@ -185,7 +654,6 @@
       ".hta",
       ".jar"
     ],
-
     "media_categories": {
       "images": [
         ".jpg",
@@ -197,7 +665,6 @@
         ".tif",
         ".tiff"
       ],
-
       "videos": [
         ".mp4",
         ".mkv",
@@ -206,7 +673,6 @@
         ".webm",
         ".m4v"
       ],
-
       "audio": [
         ".mp3",
         ".wav",
@@ -216,11 +682,27 @@
         ".ogg",
         ".wma"
       ]
-    }
+    },
+    "can_write_content": true
   },
-
   "shell": {
     "powershell_arbitrary": false,
     "cmd_arbitrary": false
+  },
+  "web_close_policy": {
+    "enabled": true,
+    "require_explicit_user_command": true,
+    "allow_tracked_agent_windows": true,
+    "allow_manual_edge_tabs": true,
+    "require_verified_url": true,
+    "allow_title_only_matching": false,
+    "allow_close_entire_untracked_edge_window": false,
+    "close_all_matching_tabs": true,
+    "maximum_manual_tabs_per_command": 10,
+    "allow_subdomains": false,
+    "allow_from_routine": false,
+    "allow_from_habit": false,
+    "manual_edge_strategy": "native_extension_bridge",
+    "allow_ui_automation_fallback": false
   }
 }

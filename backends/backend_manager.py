@@ -719,6 +719,11 @@ def main():
             "quit",
             "exit",
             "quitter",
+            "stop",
+            "sort",
+            "arrête",
+            "ferme",
+            "quitte",
         }:
 
             break

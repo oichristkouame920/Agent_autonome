@@ -49,6 +49,10 @@
         {
           "action": "open_website",
           "target": "chatgpt"
+        },
+        {
+          "action": "open_website",
+          "target": "descript"
         }
       ]
     }

@@ -132,6 +132,23 @@
     "gemini": {
       "enabled": true,
       "url": "https://gemini.google.com/"
+    },
+    "descript": {
+      "enabled": true,
+      "url": "https://web.descript.com/"
+    },
+    "pigier":{
+      "enabled": true,
+      "url":"https://pigierci.com/"
+    },
+    "sotra":{
+      "enabled": true,
+      "url":"https://webrgpd.sotra.ci/"
+    },
+    "gouvernement":{
+      "enabled": true,
+      "url":"https://www.gouv.ci/gouvernement"
     }
   }
 }
+

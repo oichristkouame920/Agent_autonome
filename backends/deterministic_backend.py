@@ -51,17 +51,113 @@ APPLICATION_ALIASES = {
     "explorateur de fichiers": "explorer",
     "explorateur de fichier": "explorer",
     "explorateur windows": "explorer",
-
     "l'explorateur": "explorer",
     "l'explorateur de fichiers": "explorer",
     "l'explorateur de fichier": "explorer",
-
     "mes fichiers": "explorer",
     "fichiers": "explorer",
-
     "explorer": "explorer",
     "file explorer": "explorer",
     "windows explorer": "explorer",
+
+    # Android Studio
+    "android studio": "android_studio",
+    "androidstudio": "android_studio",
+
+    # Bloc-notes
+    "bloc notes": "notepad",
+    "bloc-notes": "notepad",
+    "bloc note": "notepad",
+    "notepad": "notepad",
+
+    # Calculatrice
+    "calculatrice": "calculator",
+    "calculator": "calculator",
+    "calc": "calculator",
+
+    # Paint
+    "paint": "paint",
+    "microsoft paint": "paint",
+
+    # Outil Capture
+    "outil capture": "snipping_tool",
+    "outil de capture": "snipping_tool",
+    "outil capture d'ecran": "snipping_tool",
+    "capture d'ecran": "snipping_tool",
+    "snipping tool": "snipping_tool",
+
+    # Photos
+    "photos": "photos",
+    "microsoft photos": "photos",
+    "application photos": "photos",
+
+    # Lecteur multimédia
+    "lecteur multimedia": "media_player",
+    "lecteur media": "media_player",
+    "media player": "media_player",
+    "windows media player": "media_player",
+
+    # Caméra
+    "camera": "camera",
+    "camera windows": "camera",
+
+    # Horloge
+    "horloge": "clock",
+    "clock": "clock",
+
+    # Enregistreur audio
+    "enregistreur audio": "sound_recorder",
+    "magnetophone": "sound_recorder",
+    "sound recorder": "sound_recorder",
+    "voice recorder": "sound_recorder",
+
+    # Pense-bêtes
+    "pense betes": "sticky_notes",
+    "pense-betes": "sticky_notes",
+    "sticky notes": "sticky_notes",
+
+    # Clipchamp
+    "clipchamp": "clipchamp",
+
+    # Mobile connecté
+    "mobile connecte": "phone_link",
+    "phone link": "phone_link",
+    "votre telephone": "phone_link",
+    "your phone": "phone_link",
+
+    # Teams
+    "teams": "teams",
+    "microsoft teams": "teams",
+    "ms teams": "teams",
+
+    # Microsoft Office
+    "word": "word",
+    "microsoft word": "word",
+
+    "excel": "excel",
+    "microsoft excel": "excel",
+
+    "powerpoint": "powerpoint",
+    "power point": "powerpoint",
+    "microsoft powerpoint": "powerpoint",
+
+    "outlook": "outlook",
+    "microsoft outlook": "outlook",
+
+    "onenote": "onenote",
+    "one note": "onenote",
+    "microsoft onenote": "onenote",
+}
+
+
+# ============================================================
+# APPLICATIONS POUVANT ETRE APPRISES
+# ============================================================
+
+CORE_LEARNABLE_APPLICATIONS = {
+    "edge",
+    "vscode",
+    "explorer",
 }
 
 
@@ -109,6 +205,182 @@ FILE_ROOT_ALIASES = {
     "mes musiques": "music",
     "music": "music",
 }
+
+
+# ============================================================
+# SECURITE DES NOMS DE FICHIERS
+# ============================================================
+
+WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    "COM1",
+    "COM2",
+    "COM3",
+    "COM4",
+    "COM5",
+    "COM6",
+    "COM7",
+    "COM8",
+    "COM9",
+    "LPT1",
+    "LPT2",
+    "LPT3",
+    "LPT4",
+    "LPT5",
+    "LPT6",
+    "LPT7",
+    "LPT8",
+    "LPT9",
+}
+
+
+MASS_DELETE_TERMS = {
+    "tout",
+    "tous",
+    "toutes",
+    "tout le contenu",
+    "tous les fichiers",
+    "toutes les fichiers",
+    "tous les documents",
+    "toutes les photos",
+    "toutes les images",
+    "toutes les videos",
+    "toutes les musiques",
+    "les fichiers",
+    "les documents",
+    "les photos",
+    "les images",
+    "les videos",
+    "les musiques",
+}
+
+
+MASS_READ_TERMS = set(MASS_DELETE_TERMS)
+MASS_COPY_TERMS = set(MASS_DELETE_TERMS)
+
+
+WRITABLE_TEXT_EXTENSIONS = {
+    ".txt", ".md", ".csv", ".tsv", ".json",
+    ".xml", ".yaml", ".yml", ".log", ".ini",
+    ".cfg", ".conf", ".toml", ".ics", ".vcf",
+    ".html", ".htm", ".rtf", ".eml",
+}
+
+
+def is_safe_simple_file_name(
+    value
+):
+    """
+    Filtre syntaxique de défense en profondeur.
+
+    La validation finale reste effectuée par agent.py
+    puis file_tools.py.
+    """
+
+    if not isinstance(
+        value,
+        str
+    ):
+        return False
+
+    value = value.strip()
+
+    if not value:
+        return False
+
+    if len(value) > 180:
+        return False
+
+    # --------------------------------------------------------
+    # Aucun chemin
+    # --------------------------------------------------------
+
+    if (
+        "/" in value
+        or
+        "\\" in value
+    ):
+        return False
+
+    # --------------------------------------------------------
+    # Pas de traversée
+    # --------------------------------------------------------
+
+    if value in {
+        ".",
+        "..",
+    }:
+        return False
+
+    if ".." in value:
+        return False
+
+    # --------------------------------------------------------
+    # Aucun joker
+    # --------------------------------------------------------
+
+    if (
+        "*" in value
+        or
+        "?" in value
+    ):
+        return False
+
+    # --------------------------------------------------------
+    # Caractères Windows interdits
+    # ':' bloque également les ADS.
+    # --------------------------------------------------------
+
+    if re.search(
+        r'[<>:"/\\|?*\x00-\x1f]',
+        value
+    ):
+        return False
+
+    if (
+        value.endswith(" ")
+        or
+        value.endswith(".")
+    ):
+        return False
+
+    base_name = (
+        value
+        .split(".")[0]
+        .upper()
+    )
+
+    if base_name in WINDOWS_RESERVED_NAMES:
+        return False
+
+    return True
+
+
+def get_extension_chain(
+    file_name
+):
+    """
+    Exemple :
+
+        archive.tar.gz
+        -> .tar.gz
+    """
+
+    try:
+
+        return "".join(
+            suffix.casefold()
+            for suffix in Path(
+                file_name
+            ).suffixes
+        )
+
+    except TypeError:
+
+        return ""
 
 
 # ============================================================
@@ -203,7 +475,9 @@ WEBSITE_ALIASES = {
 # NORMALISATION
 # ============================================================
 
-def remove_accents(text):
+def remove_accents(
+    text
+):
 
     normalized = unicodedata.normalize(
         "NFKD",
@@ -219,7 +493,9 @@ def remove_accents(text):
     )
 
 
-def normalize_text(text):
+def normalize_text(
+    text
+):
 
     if not isinstance(
         text,
@@ -285,6 +561,7 @@ def make_action(
 def load_site_names():
 
     if not SITES_FILE.exists():
+
         return set()
 
     try:
@@ -326,12 +603,14 @@ def load_site_names():
             config,
             dict
         ):
+
             continue
 
         if not config.get(
             "enabled",
             False
         ):
+
             continue
 
         normalized = normalize_text(
@@ -354,6 +633,7 @@ def load_site_names():
 def load_routine_triggers():
 
     if not ROUTINES_FILE.exists():
+
         return {}
 
     try:
@@ -395,18 +675,21 @@ def load_routine_triggers():
             routine,
             dict
         ):
+
             continue
 
         if not routine.get(
             "enabled",
             False
         ):
+
             continue
 
         if not routine.get(
             "confirmed",
             False
         ):
+
             continue
 
         triggers = routine.get(
@@ -418,6 +701,7 @@ def load_routine_triggers():
             triggers,
             list
         ):
+
             continue
 
         for trigger in triggers:
@@ -426,6 +710,7 @@ def load_routine_triggers():
                 trigger,
                 str
             ):
+
                 continue
 
             normalized = normalize_text(
@@ -480,6 +765,7 @@ def normalize_website_target(
     )
 
     if not value:
+
         return None
 
     alias = WEBSITE_ALIASES.get(
@@ -487,10 +773,23 @@ def normalize_website_target(
     )
 
     if alias:
+
         return alias
 
+    # --------------------------------------------------------
+    # Sites présents dans sites.json.
+    #
+    # Descript reste donc supporté s'il est présent
+    # et activé dans sites.json.
+    # --------------------------------------------------------
+
     if value in load_site_names():
+
         return value
+
+    # --------------------------------------------------------
+    # Domaine explicite
+    # --------------------------------------------------------
 
     if re.fullmatch(
         r"[a-z0-9][a-z0-9.-]*\.[a-z]{2,63}",
@@ -498,6 +797,10 @@ def normalize_website_target(
     ):
 
         return value
+
+    # --------------------------------------------------------
+    # Nom de site simple
+    # --------------------------------------------------------
 
     if re.fullmatch(
         r"[a-z0-9][a-z0-9-]{0,62}",
@@ -509,9 +812,80 @@ def normalize_website_target(
     return None
 
 
-def resolve_learnable_target(
-    value
+# ============================================================
+# RESOLUTION OUVERTURE
+# ============================================================
+
+def resolve_open_target(
+    value,
+    forced_kind=None
 ):
+    """
+    Résout une cible pour une ouverture manuelle.
+
+    forced_kind :
+
+        application
+            application locale uniquement
+
+        website
+            site uniquement
+
+        None
+            application d'abord, puis site
+    """
+
+    # ========================================================
+    # APPLICATION FORCEE
+    # ========================================================
+
+    if forced_kind == "application":
+
+        application = (
+            normalize_application_target(
+                value
+            )
+        )
+
+        if application:
+
+            return (
+                "open_application",
+                application
+            )
+
+        return (
+            None,
+            None
+        )
+
+    # ========================================================
+    # SITE FORCE
+    # ========================================================
+
+    if forced_kind == "website":
+
+        website = (
+            normalize_website_target(
+                value
+            )
+        )
+
+        if website:
+
+            return (
+                "open_website",
+                website
+            )
+
+        return (
+            None,
+            None
+        )
+
+    # ========================================================
+    # APPLICATION EN PRIORITE
+    # ========================================================
 
     application = (
         normalize_application_target(
@@ -520,6 +894,63 @@ def resolve_learnable_target(
     )
 
     if application:
+
+        return (
+            "open_application",
+            application
+        )
+
+    # ========================================================
+    # SITE
+    # ========================================================
+
+    website = (
+        normalize_website_target(
+            value
+        )
+    )
+
+    if website:
+
+        return (
+            "open_website",
+            website
+        )
+
+    return (
+        None,
+        None
+    )
+
+
+# ============================================================
+# CIBLES APPRENABLES
+# ============================================================
+
+def resolve_learnable_target(
+    value
+):
+    """
+    Les applications étendues restent manuelles.
+
+    Seules Edge, VS Code et l'Explorateur
+    peuvent être ajoutés automatiquement
+    à une habitude.
+
+    Les sites restent apprenables.
+    """
+
+    application = (
+        normalize_application_target(
+            value
+        )
+    )
+
+    if (
+        application
+        and
+        application in CORE_LEARNABLE_APPLICATIONS
+    ):
 
         return (
             "open_application",
@@ -651,7 +1082,7 @@ def parse_habit_command(
         ]
 
     # --------------------------------------------------------
-    # Renommer
+    # Renommer habitude
     # --------------------------------------------------------
 
     rename_match = re.match(
@@ -928,6 +1359,7 @@ def parse_run_routine(
     )
 
     if not routine_id:
+
         return []
 
     return [
@@ -962,6 +1394,7 @@ def parse_check_application(
         )
 
         if not match:
+
             continue
 
         target = (
@@ -1045,6 +1478,7 @@ def parse_list_directory(
         )
 
         if not match:
+
             continue
 
         raw_target = (
@@ -1128,6 +1562,7 @@ def parse_create_folder(
     )
 
     if not match:
+
         return []
 
     folder_name = (
@@ -1143,9 +1578,11 @@ def parse_create_folder(
     )
 
     if not folder_name:
+
         return []
 
     if not root_name:
+
         return []
 
     return [
@@ -1154,6 +1591,209 @@ def parse_create_folder(
             root_name,
             {
                 "name": folder_name
+            }
+        )
+    ]
+
+
+# ============================================================
+# COPIER ENTRE RACINES
+# ============================================================
+
+def parse_copy_file_between_roots(
+    user_message
+):
+    """
+    Interprète la copie explicite d'UN fichier entre deux
+    racines utilisateur autorisées.
+
+    Formes acceptées :
+        copie rapport.pdf de Documents vers Bureau
+        copier rapport.pdf de Documents vers Téléchargements
+        copie rapport.pdf de Documents vers le dossier Archives dans Bureau
+
+    Aucun chemin arbitraire, joker ou copie de masse n'est accepté.
+    """
+
+    root_pattern = (
+        r"bureau|desktop|"
+        r"documents?|"
+        r"téléchargements?|telechargements?|downloads?|"
+        r"images?|photos?|pictures?|"
+        r"vidéos?|videos?|"
+        r"musiques?|music"
+    )
+
+    # ========================================================
+    # AVEC SOUS-DOSSIER DESTINATION
+    # ========================================================
+
+    pattern_with_folder = (
+        r"^\s*"
+        r"(?:copie|copier)"
+        r"\s+"
+        r"(?:(?:le|la)\s+fichier\s+)?"
+        r"(.+?)"
+        r"\s+"
+        r"(?:de|du|des)"
+        r"\s+"
+        r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+        r"("
+        + root_pattern
+        + r")"
+        r"\s+"
+        r"(?:vers|dans)"
+        r"\s+"
+        r"(?:(?:le|un)\s+dossier\s+)"
+        r"(.+?)"
+        r"\s+"
+        r"(?:dans|de|du|des)"
+        r"\s+"
+        r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+        r"("
+        + root_pattern
+        + r")"
+        r"\s*[.!?]?\s*$"
+    )
+
+    match = re.fullmatch(
+        pattern_with_folder,
+        user_message,
+        flags=re.IGNORECASE
+    )
+
+    if match:
+        file_name = (
+            match
+            .group(1)
+            .strip()
+        )
+
+        source_root = normalize_file_root(
+            match.group(2)
+        )
+
+        destination_folder = (
+            match
+            .group(3)
+            .strip()
+        )
+
+        destination_root = normalize_file_root(
+            match.group(4)
+        )
+
+        if (
+            file_name
+            and
+            source_root
+            and
+            destination_folder
+            and
+            destination_root
+            and
+            source_root != destination_root
+            and
+            is_safe_simple_file_name(file_name)
+            and
+            is_safe_simple_file_name(destination_folder)
+            and
+            normalize_text(file_name) not in MASS_COPY_TERMS
+        ):
+            return [
+                make_action(
+                    "copy_file_between_roots",
+                    source_root,
+                    {
+                        "source_root": source_root,
+                        "destination_root": destination_root,
+                        "file_name": file_name,
+                        "destination_folder": destination_folder,
+                    }
+                )
+            ]
+
+    # ========================================================
+    # DIRECTEMENT VERS UNE AUTRE RACINE
+    # ========================================================
+
+    pattern_direct = (
+        r"^\s*"
+        r"(?:copie|copier)"
+        r"\s+"
+        r"(?:(?:le|la)\s+fichier\s+)?"
+        r"(.+?)"
+        r"\s+"
+        r"(?:de|du|des)"
+        r"\s+"
+        r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+        r"("
+        + root_pattern
+        + r")"
+        r"\s+"
+        r"(?:vers|dans)"
+        r"\s+"
+        r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+        r"("
+        + root_pattern
+        + r")"
+        r"\s*[.!?]?\s*$"
+    )
+
+    match = re.fullmatch(
+        pattern_direct,
+        user_message,
+        flags=re.IGNORECASE
+    )
+
+    if not match:
+        return []
+
+    file_name = (
+        match
+        .group(1)
+        .strip()
+    )
+
+    source_root = normalize_file_root(
+        match.group(2)
+    )
+
+    destination_root = normalize_file_root(
+        match.group(3)
+    )
+
+    if not file_name:
+        return []
+
+    if not source_root:
+        return []
+
+    if not destination_root:
+        return []
+
+    if source_root == destination_root:
+        return []
+
+    if not is_safe_simple_file_name(
+        file_name
+    ):
+        return []
+
+    if normalize_text(
+        file_name
+    ) in MASS_COPY_TERMS:
+        return []
+
+    return [
+        make_action(
+            "copy_file_between_roots",
+            source_root,
+            {
+                "source_root": source_root,
+                "destination_root": destination_root,
+                "file_name": file_name,
+                "destination_folder": None,
             }
         )
     ]
@@ -1299,6 +1939,7 @@ def parse_move_file_between_roots(
     )
 
     if not match:
+
         return []
 
     file_name = (
@@ -1320,15 +1961,19 @@ def parse_move_file_between_roots(
     )
 
     if not file_name:
+
         return []
 
     if not source_root:
+
         return []
 
     if not destination_root:
+
         return []
 
     if source_root == destination_root:
+
         return []
 
     return [
@@ -1374,6 +2019,7 @@ def parse_move_file(
     )
 
     if not match:
+
         return []
 
     file_name = (
@@ -1389,16 +2035,21 @@ def parse_move_file(
     )
 
     if not file_name:
+
         return []
 
     if not destination_folder:
+
         return []
 
-    # Ne pas confondre avec un déplacement
-    # vers une racine utilisateur.
+    # --------------------------------------------------------
+    # Ne pas confondre avec une racine utilisateur.
+    # --------------------------------------------------------
+
     if normalize_file_root(
         destination_folder
     ):
+
         return []
 
     return [
@@ -1411,6 +2062,640 @@ def parse_move_file(
             }
         )
     ]
+
+
+# ============================================================
+# RENOMMER UN FICHIER
+# ============================================================
+
+def parse_rename_file(
+    user_message
+):
+
+    root_pattern = (
+        r"bureau|desktop|"
+        r"documents?|"
+        r"téléchargements?|telechargements?|downloads?|"
+        r"images?|photos?|pictures?|"
+        r"vidéos?|videos?|"
+        r"musiques?|music"
+    )
+
+    pattern = (
+        r"^\s*"
+        r"(?:renomme|renommer)"
+        r"\s+"
+        r"(?:(?:le|la)\s+fichier\s+)?"
+        r"(.+?)"
+        r"\s+en\s+"
+        r"(.+?)"
+        r"\s+dans\s+"
+        r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+        r"("
+        + root_pattern
+        + r")"
+        r"\s*[.!?]?\s*$"
+    )
+
+    match = re.fullmatch(
+        pattern,
+        user_message,
+        flags=re.IGNORECASE
+    )
+
+    if not match:
+
+        return []
+
+    old_name = (
+        match
+        .group(1)
+        .strip()
+    )
+
+    new_name = (
+        match
+        .group(2)
+        .strip()
+    )
+
+    root_name = (
+        normalize_file_root(
+            match.group(3)
+        )
+    )
+
+    if not root_name:
+
+        return []
+
+    # --------------------------------------------------------
+    # Noms simples uniquement
+    # --------------------------------------------------------
+
+    if not is_safe_simple_file_name(
+        old_name
+    ):
+
+        return []
+
+    if not is_safe_simple_file_name(
+        new_name
+    ):
+
+        return []
+
+    # --------------------------------------------------------
+    # Même nom ou simple changement de casse
+    # --------------------------------------------------------
+
+    if (
+        old_name.casefold()
+        ==
+        new_name.casefold()
+    ):
+
+        return []
+
+    # --------------------------------------------------------
+    # Aucun changement d'extension
+    # --------------------------------------------------------
+
+    if (
+        get_extension_chain(
+            old_name
+        )
+        !=
+        get_extension_chain(
+            new_name
+        )
+    ):
+
+        return []
+
+    return [
+        make_action(
+            "rename_file",
+            root_name,
+            {
+                "old_name": old_name,
+                "new_name": new_name,
+            }
+        )
+    ]
+
+
+# ============================================================
+# SUPPRIMER UN FICHIER
+# ============================================================
+
+def parse_delete_file(
+    user_message
+):
+    """
+    Interprète uniquement une suppression de fichier
+    explicitement rattachée à une racine utilisateur.
+
+    L'exécution réelle correspond uniquement
+    à un envoi vers la Corbeille Windows.
+    """
+
+    normalized = normalize_text(
+        user_message
+    )
+
+    # ========================================================
+    # INTENTIONS INTERDITES
+    # ========================================================
+
+    forbidden_fragments = (
+        "definitivement",
+        "de facon definitive",
+        "de maniere definitive",
+        "sans passer par la corbeille",
+        "sans corbeille",
+        "vide la corbeille",
+        "vider la corbeille",
+    )
+
+    if any(
+        fragment in normalized
+        for fragment in forbidden_fragments
+    ):
+
+        return []
+
+    root_pattern = (
+        r"bureau|desktop|"
+        r"documents?|"
+        r"téléchargements?|telechargements?|downloads?|"
+        r"images?|photos?|pictures?|"
+        r"vidéos?|videos?|"
+        r"musiques?|music"
+    )
+
+    pattern = (
+        r"^\s*"
+        r"(?:supprime|supprimer)"
+        r"\s+"
+        r"(?:(?:le|la)\s+fichier\s+)?"
+        r"(.+?)"
+        r"\s+"
+        r"(?:dans|de|du|des)"
+        r"\s+"
+        r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+        r"("
+        + root_pattern
+        + r")"
+        r"\s*[.!?]?\s*$"
+    )
+
+    match = re.fullmatch(
+        pattern,
+        user_message,
+        flags=re.IGNORECASE
+    )
+
+    if not match:
+
+        return []
+
+    file_name = (
+        match
+        .group(1)
+        .strip()
+    )
+
+    root_name = (
+        normalize_file_root(
+            match.group(2)
+        )
+    )
+
+    if not root_name:
+
+        return []
+
+    # ========================================================
+    # NOM SIMPLE UNIQUEMENT
+    # ========================================================
+
+    if not is_safe_simple_file_name(
+        file_name
+    ):
+
+        return []
+
+    # ========================================================
+    # AUCUNE FORMULATION DE MASSE
+    # ========================================================
+
+    if normalize_text(
+        file_name
+    ) in MASS_DELETE_TERMS:
+
+        return []
+
+    return [
+        make_action(
+            "delete_file",
+            root_name,
+            {
+                "file_name": file_name
+            }
+        )
+    ]
+
+
+# ============================================================
+# LIRE LE CONTENU D'UN FICHIER
+# ============================================================
+
+def parse_read_file_content(
+    user_message
+):
+    """
+    Interprète uniquement la lecture explicite d'UN fichier
+    situé directement dans une racine utilisateur autorisée.
+
+    Formes acceptées :
+        lis rapport.txt dans Documents
+        lis le fichier rapport.txt dans Documents
+        lire notes.md dans Bureau
+        affiche le contenu de config.json dans Téléchargements
+
+    La validation des extensions, de la taille, de l'encodage
+    et du contenu binaire reste assurée par file_tools.py.
+    """
+
+    root_pattern = (
+        r"bureau|desktop|"
+        r"documents?|"
+        r"téléchargements?|telechargements?|downloads?|"
+        r"images?|photos?|pictures?|"
+        r"vidéos?|videos?|"
+        r"musiques?|music"
+    )
+
+    patterns = [
+        (
+            r"^\s*"
+            r"(?:lis|lire)"
+            r"\s+"
+            r"(?:(?:le|la)\s+fichier\s+)?"
+            r"(.+?)"
+            r"\s+dans\s+"
+            r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+            r"(" + root_pattern + r")"
+            r"\s*[.!?]?\s*$"
+        ),
+        (
+            r"^\s*"
+            r"(?:affiche|afficher|montre|montrer)"
+            r"\s+le\s+contenu\s+(?:de|du)\s+"
+            r"(.+?)"
+            r"\s+dans\s+"
+            r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+            r"(" + root_pattern + r")"
+            r"\s*[.!?]?\s*$"
+        ),
+    ]
+
+    match = None
+
+    for pattern in patterns:
+
+        match = re.fullmatch(
+            pattern,
+            user_message,
+            flags=re.IGNORECASE
+        )
+
+        if match:
+            break
+
+    if not match:
+        return []
+
+    file_name = (
+        match
+        .group(1)
+        .strip()
+    )
+
+    root_name = (
+        normalize_file_root(
+            match.group(2)
+        )
+    )
+
+    if not root_name:
+        return []
+
+    if not is_safe_simple_file_name(
+        file_name
+    ):
+        return []
+
+    if normalize_text(
+        file_name
+    ) in MASS_READ_TERMS:
+        return []
+
+    return [
+        make_action(
+            "read_file_content",
+            root_name,
+            {
+                "file_name": file_name
+            }
+        )
+    ]
+
+
+# ============================================================
+# CREER UN FICHIER AVEC CONTENU
+# ============================================================
+
+def parse_create_file_with_content(
+    user_message
+):
+    """
+    Interprète une création explicite d'UN nouveau fichier texte.
+
+    Formes acceptées :
+        crée notes.txt dans Documents avec le contenu Réunion à 14h
+        crée le fichier todo.md dans Bureau contenant Acheter du lait
+        créer config.json dans Téléchargements avec le contenu {"mode":"local"}
+
+    La validation finale des permissions, de la taille et de
+    l'absence d'écrasement reste assurée par agent.py/file_tools.py.
+    """
+
+    root_pattern = (
+        r"bureau|desktop|"
+        r"documents?|"
+        r"téléchargements?|telechargements?|downloads?|"
+        r"images?|photos?|pictures?|"
+        r"vidéos?|videos?|"
+        r"musiques?|music"
+    )
+
+    patterns = [
+        (
+            r"^\s*"
+            r"(?:crée|cree|créer|creer)"
+            r"\s+"
+            r"(?:(?:le|un)\s+fichier\s+)?"
+            r"(.+?)"
+            r"\s+dans\s+"
+            r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+            r"(" + root_pattern + r")"
+            r"\s+avec\s+le\s+contenu"
+            r"\s*:?[ \t]*"
+            r"(.+?)"
+            r"\s*$"
+        ),
+        (
+            r"^\s*"
+            r"(?:crée|cree|créer|creer)"
+            r"\s+"
+            r"(?:(?:le|un)\s+fichier\s+)?"
+            r"(.+?)"
+            r"\s+dans\s+"
+            r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+            r"(" + root_pattern + r")"
+            r"\s+contenant"
+            r"\s*:?[ \t]*"
+            r"(.+?)"
+            r"\s*$"
+        ),
+    ]
+
+    match = None
+
+    for pattern in patterns:
+        match = re.fullmatch(
+            pattern,
+            user_message,
+            flags=re.IGNORECASE
+        )
+
+        if match:
+            break
+
+    if not match:
+        return []
+
+    file_name = (
+        match
+        .group(1)
+        .strip()
+    )
+
+    root_name = normalize_file_root(
+        match.group(2)
+    )
+
+    content = (
+        match
+        .group(3)
+        .strip()
+    )
+
+    if not root_name:
+        return []
+
+    if not is_safe_simple_file_name(
+        file_name
+    ):
+        return []
+
+    extension = (
+        Path(file_name)
+        .suffix
+        .lower()
+    )
+
+    if extension not in WRITABLE_TEXT_EXTENSIONS:
+        return []
+
+    if not content:
+        return []
+
+    # Le backend applique une borne prudente. La borne finale
+    # en octets est imposée par file_tools.py.
+    if len(content) > 65536:
+        return []
+
+    return [
+        make_action(
+            "create_file_with_content",
+            root_name,
+            {
+                "file_name": file_name,
+                "content": content,
+            }
+        )
+    ]
+
+
+# ============================================================
+# FERMETURE APPLICATION / SITE
+# ============================================================
+
+def parse_close(
+    text
+):
+    """
+    Exemples :
+
+        ferme Word
+        ferme Edge
+        ferme l'application Android Studio
+        ferme le site GitHub
+        ferme la fenêtre du site ChatGPT
+        ferme Word et Excel
+
+    Sans précision, une application connue est prioritaire,
+    sinon la cible est interprétée comme un site.
+    """
+
+    prefixes = [
+        "ferme ",
+        "fermer ",
+        "quitte ",
+        "quitter ",
+        "arrete ",
+        "arreter ",
+    ]
+
+    content = None
+
+    for prefix in prefixes:
+        if text.startswith(
+            prefix
+        ):
+            content = (
+                text[
+                    len(prefix):
+                ]
+                .strip()
+            )
+            break
+
+    if not content:
+        return []
+
+    forced_kind = None
+
+    site_prefixes = [
+        "la fenetre du site ",
+        "fenetre du site ",
+        "le site ",
+        "site ",
+    ]
+
+    application_prefixes = [
+        "la fenetre de l'application ",
+        "fenetre de l'application ",
+        "la fenetre de l'appli ",
+        "fenetre de l'appli ",
+        "l'application ",
+        "application ",
+        "l'appli ",
+        "appli ",
+    ]
+
+    for prefix in site_prefixes:
+        if content.startswith(
+            prefix
+        ):
+            forced_kind = "website"
+            content = (
+                content[
+                    len(prefix):
+                ]
+                .strip()
+            )
+            break
+
+    if forced_kind is None:
+        for prefix in application_prefixes:
+            if content.startswith(
+                prefix
+            ):
+                forced_kind = "application"
+                content = (
+                    content[
+                        len(prefix):
+                    ]
+                    .strip()
+                )
+                break
+
+    if forced_kind is None:
+        for prefix in [
+            "la fenetre de ",
+            "fenetre de ",
+            "la fenetre ",
+            "fenetre ",
+        ]:
+            if content.startswith(
+                prefix
+            ):
+                content = (
+                    content[
+                        len(prefix):
+                    ]
+                    .strip()
+                )
+                break
+
+    if not content:
+        return []
+
+    actions = []
+    seen = set()
+
+    for raw_target in split_targets(
+        content
+    ):
+        open_action, target = resolve_open_target(
+            raw_target,
+            forced_kind=forced_kind
+        )
+
+        if not open_action:
+            continue
+
+        if open_action == "open_application":
+            action = "close_application"
+        elif open_action == "open_website":
+            action = "close_website"
+        else:
+            continue
+
+        key = (
+            action,
+            target
+        )
+
+        if key in seen:
+            continue
+
+        seen.add(
+            key
+        )
+
+        actions.append(
+            make_action(
+                action,
+                target
+            )
+        )
+
+    return actions
 
 
 # ============================================================
@@ -1450,19 +2735,38 @@ def parse_open(
             break
 
     if not content:
+
         return []
 
-    for prefix in [
+    # ========================================================
+    # PRECISION SITE / APPLICATION
+    # ========================================================
+
+    forced_kind = None
+
+    website_prefixes = [
         "le site ",
         "site ",
+    ]
+
+    application_prefixes = [
         "l'application ",
         "application ",
+        "l'appli ",
         "appli ",
-    ]:
+    ]
+
+    # --------------------------------------------------------
+    # Site explicitement demandé
+    # --------------------------------------------------------
+
+    for prefix in website_prefixes:
 
         if content.startswith(
             prefix
         ):
+
+            forced_kind = "website"
 
             content = (
                 content[
@@ -1473,6 +2777,33 @@ def parse_open(
 
             break
 
+    # --------------------------------------------------------
+    # Application explicitement demandée
+    # --------------------------------------------------------
+
+    if forced_kind is None:
+
+        for prefix in application_prefixes:
+
+            if content.startswith(
+                prefix
+            ):
+
+                forced_kind = "application"
+
+                content = (
+                    content[
+                        len(prefix):
+                    ]
+                    .strip()
+                )
+
+                break
+
+    if not content:
+
+        return []
+
     actions = []
 
     seen = set()
@@ -1482,12 +2813,14 @@ def parse_open(
     ):
 
         action, target = (
-            resolve_learnable_target(
-                raw_target
+            resolve_open_target(
+                raw_target,
+                forced_kind=forced_kind
             )
         )
 
         if not action:
+
             continue
 
         key = (
@@ -1496,6 +2829,7 @@ def parse_open(
         )
 
         if key in seen:
+
             continue
 
         seen.add(
@@ -1572,12 +2906,62 @@ def interpret(
         )
 
     # --------------------------------------------------------
+    # Création contrôlée de fichier avec contenu
+    # --------------------------------------------------------
+
+    if not actions:
+
+        actions = parse_create_file_with_content(
+            user_message
+        )
+
+    # --------------------------------------------------------
     # Liste dossier
     # --------------------------------------------------------
 
     if not actions:
 
         actions = parse_list_directory(
+            user_message
+        )
+
+    # --------------------------------------------------------
+    # Renommage contrôlé
+    # --------------------------------------------------------
+
+    if not actions:
+
+        actions = parse_rename_file(
+            user_message
+        )
+
+    # --------------------------------------------------------
+    # Suppression contrôlée
+    # --------------------------------------------------------
+
+    if not actions:
+
+        actions = parse_delete_file(
+            user_message
+        )
+
+    # --------------------------------------------------------
+    # Lecture contrôlée
+    # --------------------------------------------------------
+
+    if not actions:
+
+        actions = parse_read_file_content(
+            user_message
+        )
+
+    # --------------------------------------------------------
+    # Copie contrôlée entre racines
+    # --------------------------------------------------------
+
+    if not actions:
+
+        actions = parse_copy_file_between_roots(
             user_message
         )
 
@@ -1599,6 +2983,16 @@ def interpret(
 
         actions = parse_move_file(
             user_message
+        )
+
+    # --------------------------------------------------------
+    # Fermeture application / site
+    # --------------------------------------------------------
+
+    if not actions:
+
+        actions = parse_close(
+            text
         )
 
     # --------------------------------------------------------
@@ -1654,11 +3048,16 @@ def main():
 
             break
 
-        if message.lower() in {
+        if normalize_text(
+            message
+        ) in {
             "quit",
             "exit",
-            "quitter",
+            "quitte",
             "stop",
+            "sort",
+            "ferme"
+            "arrête",
         }:
 
             break
