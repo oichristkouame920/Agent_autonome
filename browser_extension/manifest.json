@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "AgentLocal Browser Bridge",
+  "version": "1.0.0",
+  "description": "Pont local securise entre Microsoft Edge et AgentLocal.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAuiLLKd7gc0rXS9Of27/ufEe4h3Oyis7/06bMWzAzio4k4at/NWIsp9bsfStww7fevdlHmiMtzmZOpIBd+6hejZW8LZXtHbNp0OX/elc3zKA4Wu4PRlUY27GLMsLMKOmEi4kQ5eIv2jy3DmTNseiOL61VcO9CzN/M3h9DSo54o2zMw8ODPVMbB+qu1U1DuQvxji7fwsTih/uaDbwakCQOp7KTUcTwCOYQHfhLO3n1kJ816+F9Yub1otImB2fif3TFZa8hrG5ZOktUH4jwVlkXGEmbtzKBHsDy/Wq8JAboJtAOUAp62Sm3Rgz7hA0hJBy2eJOdPP4nfN1hRoyKJCT/cQIDAQAB",
+  "permissions": [
+    "tabs",
+    "nativeMessaging"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}

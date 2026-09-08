@@ -1,0 +1,9 @@
+{
+  "name": "com.agentlocal.bridge",
+  "description": "Pont local AgentLocal pour Microsoft Edge",
+  "path": "agentlocal_native_host.exe",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://odhigmilcgpndpjgjkbfmpoiiblklcgf/"
+  ]
+}

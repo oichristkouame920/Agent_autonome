@@ -186,7 +186,7 @@ def bridge_request(action, payload=None, timeout_seconds=DEFAULT_TIMEOUT_SECONDS
             None,
             (
                 "Le pont Edge AgentLocal n'est pas configuré. "
-                "Exécute tools\\setup_edge_bridge.py puis charge "
+                "Exécute agent_tools\\edge_bridge\\setup_edge_bridge.py puis charge "
                 "l'extension AgentLocal dans Edge."
             ),
         )
