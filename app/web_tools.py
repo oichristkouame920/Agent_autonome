@@ -2344,7 +2344,7 @@ def close_website(
     Ferme le site demandé dans Edge de façon ciblée.
 
     Priorité :
-    1. pont navigateur local AgentLocal (URL réelle fournie par Edge) ;
+    1. pont HTTP local AgentLocal (URL réelle fournie par l'extension Edge) ;
     2. repli sur une fenêtre explicitement suivie par AgentLocal.
 
     Aucun onglet manuel n'est fermé sur la base de son titre.
@@ -2442,8 +2442,8 @@ def close_website(
         and
         policy.get(
             "manual_edge_strategy",
-            "native_extension_bridge"
-        ) == "native_extension_bridge"
+            "local_http_extension_bridge"
+        ) == "local_http_extension_bridge"
     ):
         bridge_success, bridge_count, bridge_message = (
             close_site_via_bridge(

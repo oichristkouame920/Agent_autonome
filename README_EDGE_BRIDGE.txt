@@ -1,78 +1,127 @@
-AgentLocal - Pont Microsoft Edge local
-======================================
+AGENTLOCAL - PONT EDGE HTTP LOCAL
+=================================
 
-Objectif
+OBJECTIF
 --------
-Permettre à AgentLocal de fermer de façon ciblée un onglet Edge,
-même lorsque cet onglet a été ouvert manuellement par l'utilisateur.
+Permettre à AgentLocal de voir et fermer précisément les onglets Microsoft Edge,
+y compris ceux ouverts manuellement, sans Native Messaging et sans exécutable
+non signé.
 
-Architecture
+Cette version remplace l'ancien hôte natif agentlocal_native_host.exe.
+
+ARCHITECTURE
 ------------
-AgentLocal -> app/browser_bridge.py -> fichiers IPC locaux sous
-%LOCALAPPDATA%\AgentLocalBridge -> hôte Native Messaging -> extension Edge
--> API chrome.tabs.
+AgentLocal (Python)
+    |
+    | HTTP local authentifié
+    | 127.0.0.1 uniquement
+    v
+Extension Edge
+    |
+    +-- chrome.tabs.query()
+    +-- chrome.tabs.remove()
 
-Aucune API cloud n'est utilisée.
+Aucun cloud.
+Aucune API externe.
+Aucun PowerShell ou CMD arbitraire.
+Aucun taskkill.
+Aucune désactivation de Smart App Control.
 
-Installation une seule fois
-----------------------------
-Depuis la racine AgentLocal :
+WINDOWS
+-------
+Compatible avec Windows 10 et Windows 11.
 
-  .\.venv\Scripts\python.exe .\agent_tools\edge_bridge\setup_edge_bridge.py
+FICHIERS AJOUTES / MODIFIES
+---------------------------
+app/browser_bridge.py
+app/browser_bridge_server.py
+app/web_tools.py
+browser_extension/manifest.json
+browser_extension/background.js
+browser_extension/bridge_config.example.js
+config/browser_bridge.example.json
+config/permissions.json
+agent_tools/edge_bridge/setup_edge_bridge.py
+agent_tools/edge_bridge/test_edge_bridge.py
+requirements.txt
+.gitignore
 
-Le script :
-- compile browser_native_host\agentlocal_native_host.c ;
-- crée agentlocal_native_host.exe ;
-- enregistre le manifeste Native Messaging sous HKCU seulement ;
-- crée la configuration locale du pont.
+L'ancien dossier browser_native_host n'est plus utilisé et a été retiré du projet.
 
-Ensuite dans Microsoft Edge :
+INSTALLATION
+------------
+Depuis :
+C:\Users\cdn09\AgentLocal
 
-1. Ouvrir edge://extensions/
-2. Activer Mode développeur.
-3. Cliquer Charger l'extension décompressée.
-4. Sélectionner le dossier :
+1. Installer les dépendances Python :
 
-   C:\Users\<utilisateur>\AgentLocal\browser_extension
+.\.venv\Scripts\python.exe -m pip install -r .\requirements.txt
 
-5. Vérifier l'ID :
+2. Générer la configuration locale du pont :
 
-   odhigmilcgpndpjgjkbfmpoiiblklcgf
+.\.venv\Scripts\python.exe .\agent_tools\edge_bridge\setup_edge_bridge.py
 
-Test
-----
-Fermer puis rouvrir Edge si nécessaire, puis exécuter :
+Cette commande génère localement :
+- config\browser_bridge.json
+- browser_extension\bridge_config.js
 
-  .\.venv\Scripts\python.exe .\agent_tools\edge_bridge\test_edge_bridge.py
+Ces deux fichiers contiennent un secret local et sont ignorés par Git.
 
-Le test doit afficher :
+3. Dans Edge :
 
-  Ping : OK
-  Lecture des onglets : OK
+edge://extensions/
 
-Utilisation
------------
-Dans AgentLocal :
+- Active "Mode développeur".
+- Si l'ancienne extension AgentLocal est déjà chargée, clique sur "Recharger".
+- Sinon clique sur "Charger l'extension décompressée".
+- Sélectionne :
+  C:\Users\cdn09\AgentLocal\browser_extension
 
-  ferme le site YouTube
-  ferme le site GitHub
-  ferme le site ChatGPT
+ID attendu :
+odhigmilcgpndpjgjkbfmpoiiblklcgf
 
-L'extension vérifie l'URL réelle des onglets avant fermeture.
+4. Tester :
 
-Sécurité
+.\.venv\Scripts\python.exe .\agent_tools\edge_bridge\test_edge_bridge.py
+
+Résultat attendu :
+
+Ping : OK
+Pont Edge HTTP AgentLocal opérationnel.
+
+Lecture des onglets : OK
+
+5. Lancer AgentLocal :
+
+.\.venv\Scripts\python.exe .\app\agent.py
+
+Puis tester :
+
+ferme le site YouTube
+
+YouTube peut avoir été ouvert manuellement.
+
+SECURITE
 --------
-- Hôte enregistré sous HKEY_CURRENT_USER, pas besoin d'administrateur.
-- Extension autorisée explicitement dans le manifeste Native Messaging.
-- Uniquement les actions close_site, list_tabs et ping sont implémentées.
-- Les URL edge://, file:// et autres protocoles non HTTP(S) sont ignorées.
-- Maximum 10 onglets fermés par commande, même si la configuration est modifiée.
-- AgentLocal conserve sa validation de commande explicite avant fermeture.
-- Le pont n'utilise ni taskkill, ni PowerShell, ni CMD à l'exécution.
+- Serveur lié uniquement à 127.0.0.1.
+- Secret aléatoire de 256 bits généré par setup_edge_bridge.py.
+- CORS limité à l'ID exact de l'extension.
+- Extension ID transmis et vérifié à chaque requête.
+- Schéma d'actions fermé : ping, list_tabs, close_site, activate_site.
+- Aucun JavaScript arbitraire dans les pages.
+- Aucun shell.
+- Maximum de 10 onglets fermés par commande.
+- Les URL sont vérifiées par l'extension via chrome.tabs.
 
-Désinstallation du pont natif
------------------------------
+GIT
+---
+Ne pas versionner :
+config/browser_bridge.json
+browser_extension/bridge_config.js
 
-  .\.venv\Scripts\python.exe .\agent_tools\edge_bridge\setup_edge_bridge.py --uninstall
+Ils sont déjà ajoutés à .gitignore.
 
-L'extension Edge doit ensuite être retirée manuellement depuis edge://extensions/.
+SMART APP CONTROL
+-----------------
+Smart App Control peut rester activé.
+Aucun agentlocal_native_host.exe n'est requis par cette architecture.

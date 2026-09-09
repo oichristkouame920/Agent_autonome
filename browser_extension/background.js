@@ -1,27 +1,49 @@
 "use strict";
 
-const HOST_NAME = "com.agentlocal.bridge";
-const POLL_INTERVAL_MS = 350;
-const RECONNECT_DELAY_MS = 1500;
+try {
+  importScripts("bridge_config.js");
+} catch (_) {
+  globalThis.AGENTLOCAL_BRIDGE_CONFIG = null;
+}
+
+const CONFIG = globalThis.AGENTLOCAL_BRIDGE_CONFIG;
 const HARD_MAX_CLOSE_TABS = 10;
 const HARD_MAX_LIST_TABS = 50;
+const ALARM_NAME = "agentlocal-bridge-wakeup";
 
-let nativePort = null;
 let pollTimer = null;
 let pollPending = false;
-let reconnectTimer = null;
 
-function safePost(message) {
-  if (!nativePort) {
-    return false;
+function bridgeConfigured() {
+  return Boolean(
+    CONFIG &&
+    CONFIG.enabled === true &&
+    CONFIG.host === "127.0.0.1" &&
+    Number.isInteger(CONFIG.port) &&
+    CONFIG.port >= 1024 &&
+    CONFIG.port <= 65535 &&
+    typeof CONFIG.token === "string" &&
+    CONFIG.token.length >= 64 &&
+    typeof CONFIG.extensionId === "string" &&
+    CONFIG.extensionId.length === 32
+  );
+}
+
+function bridgeBaseUrl() {
+  return `http://127.0.0.1:${CONFIG.port}`;
+}
+
+function bridgeHeaders(includeJson = false) {
+  const headers = {
+    "X-AgentLocal-Token": CONFIG.token,
+    "X-AgentLocal-Extension-ID": CONFIG.extensionId
+  };
+
+  if (includeJson) {
+    headers["Content-Type"] = "application/json";
   }
 
-  try {
-    nativePort.postMessage(message);
-    return true;
-  } catch (_) {
-    return false;
-  }
+  return headers;
 }
 
 function normalizeHostname(hostname) {
@@ -103,7 +125,7 @@ async function closeSiteCommand(command) {
     return {
       ok: false,
       closed_count: 0,
-      message: "URL cible refusee par l'extension AgentLocal."
+      message: "URL cible refusée par l'extension AgentLocal."
     };
   }
 
@@ -130,7 +152,7 @@ async function closeSiteCommand(command) {
     return {
       ok: false,
       closed_count: 0,
-      message: `Aucun onglet Edge correspondant a ${targetUrl} n'a ete trouve.`
+      message: `Aucun onglet Edge correspondant à ${targetUrl} n'a été trouvé.`
     };
   }
 
@@ -154,7 +176,7 @@ async function closeSiteCommand(command) {
     return {
       ok: false,
       closed_count: 0,
-      message: "Aucun onglet Edge fermable n'a ete trouve."
+      message: "Aucun onglet Edge fermable n'a été trouvé."
     };
   }
 
@@ -163,13 +185,12 @@ async function closeSiteCommand(command) {
   return {
     ok: true,
     closed_count: ids.length,
-    message: `${ids.length} onglet(s) Edge correspondant a ${targetUrl} ferme(s).`
+    message: `${ids.length} onglet(s) Edge correspondant à ${targetUrl} fermé(s).`
   };
 }
 
 async function listTabsCommand() {
   const tabs = await chrome.tabs.query({});
-
   const safeTabs = [];
 
   for (const tab of tabs.slice(0, HARD_MAX_LIST_TABS)) {
@@ -185,7 +206,9 @@ async function listTabsCommand() {
 
     safeTabs.push({
       url: tab.url.slice(0, 4096),
-      title: typeof tab.title === "string" ? tab.title.slice(0, 500) : "",
+      title: typeof tab.title === "string"
+        ? tab.title.slice(0, 500)
+        : "",
       active: Boolean(tab.active)
     });
   }
@@ -197,16 +220,69 @@ async function listTabsCommand() {
   };
 }
 
+async function activateSiteCommand(command) {
+  const payload = command.payload && typeof command.payload === "object"
+    ? command.payload
+    : {};
+
+  const targetUrl = String(payload.url || "").trim();
+
+  if (!parseHttpUrl(targetUrl)) {
+    return {
+      ok: false,
+      message: "URL cible refusée par l'extension AgentLocal."
+    };
+  }
+
+  const allowSubdomains = Boolean(payload.allow_subdomains);
+  const tabs = await chrome.tabs.query({});
+
+  const match = tabs.find((tab) => {
+    return (
+      typeof tab.id === "number" &&
+      typeof tab.url === "string" &&
+      hostMatches(tab.url, targetUrl, allowSubdomains)
+    );
+  });
+
+  if (!match || typeof match.id !== "number") {
+    return {
+      ok: false,
+      message: `Aucun onglet Edge correspondant à ${targetUrl} n'a été trouvé.`
+    };
+  }
+
+  await chrome.tabs.update(
+    match.id,
+    {
+      active: true
+    }
+  );
+
+  if (typeof match.windowId === "number") {
+    await chrome.windows.update(
+      match.windowId,
+      {
+        focused: true
+      }
+    );
+  }
+
+  return {
+    ok: true,
+    message: `Onglet Edge activé pour ${targetUrl}.`
+  };
+}
+
 async function executeCommand(command) {
   if (!command || command.type !== "command") {
     return;
   }
 
   const requestId = String(command.request_id || "");
-  const token = String(command.token || "");
   const action = String(command.action || "");
 
-  if (!requestId || !token || !action) {
+  if (!requestId || !action) {
     return;
   }
 
@@ -217,101 +293,143 @@ async function executeCommand(command) {
       result = await closeSiteCommand(command);
     } else if (action === "list_tabs") {
       result = await listTabsCommand();
+    } else if (action === "activate_site") {
+      result = await activateSiteCommand(command);
     } else if (action === "ping") {
       result = {
         ok: true,
-        message: "Pont Edge AgentLocal operationnel."
+        message: "Pont Edge HTTP AgentLocal opérationnel."
       };
     } else {
       result = {
         ok: false,
-        message: "Action de pont non autorisee."
+        message: "Action de pont non autorisée."
       };
     }
   } catch (error) {
     result = {
       ok: false,
-      message: `Erreur du pont Edge : ${String(error && error.message ? error.message : error)}`
+      message: `Erreur du pont Edge : ${String(
+        error && error.message
+          ? error.message
+          : error
+      )}`
     };
   }
 
-  safePost({
+  await postResult({
     type: "result",
     schema_version: 1,
     request_id: requestId,
-    token: token,
     action: action,
     ...result
   });
 }
 
-function scheduleReconnect() {
-  if (reconnectTimer) {
+async function postResult(result) {
+  const response = await fetch(
+    `${bridgeBaseUrl()}/v1/result`,
+    {
+      method: "POST",
+      headers: bridgeHeaders(true),
+      body: JSON.stringify(result),
+      cache: "no-store"
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Le serveur AgentLocal a refusé le résultat (${response.status}).`
+    );
+  }
+}
+
+async function pollOnce() {
+  if (!bridgeConfigured() || pollPending) {
     return;
   }
 
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connectNativeHost();
-  }, RECONNECT_DELAY_MS);
+  pollPending = true;
+
+  try {
+    const response = await fetch(
+      `${bridgeBaseUrl()}/v1/command`,
+      {
+        method: "GET",
+        headers: bridgeHeaders(false),
+        cache: "no-store"
+      }
+    );
+
+    if (response.status === 204) {
+      return;
+    }
+
+    if (!response.ok) {
+      return;
+    }
+
+    const command = await response.json();
+
+    if (
+      command &&
+      typeof command === "object" &&
+      command.type === "command"
+    ) {
+      await executeCommand(command);
+    }
+  } catch (_) {
+    // AgentLocal n'est peut-être pas lancé. Le prochain poll réessaiera.
+  } finally {
+    pollPending = false;
+  }
 }
 
 function startPolling() {
+  if (!bridgeConfigured()) {
+    return;
+  }
+
   if (pollTimer) {
     clearInterval(pollTimer);
   }
 
-  pollTimer = setInterval(() => {
-    if (!nativePort || pollPending) {
-      return;
-    }
+  const interval = clampInt(
+    CONFIG.pollIntervalMs,
+    250,
+    2000,
+    500
+  );
 
-    pollPending = safePost({
-      type: "poll",
-      schema_version: 1
-    });
-  }, POLL_INTERVAL_MS);
+  pollTimer = setInterval(
+    () => {
+      void pollOnce();
+    },
+    interval
+  );
+
+  chrome.alarms.create(
+    ALARM_NAME,
+    {
+      periodInMinutes: 0.5
+    }
+  );
+
+  void pollOnce();
 }
 
-function connectNativeHost() {
-  try {
-    nativePort = chrome.runtime.connectNative(HOST_NAME);
-  } catch (_) {
-    nativePort = null;
-    scheduleReconnect();
-    return;
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm && alarm.name === ALARM_NAME) {
+    void pollOnce();
   }
+});
 
-  nativePort.onMessage.addListener((message) => {
-    pollPending = false;
-
-    if (!message || typeof message !== "object") {
-      return;
-    }
-
-    if (message.type === "command") {
-      void executeCommand(message);
-    }
-  });
-
-  nativePort.onDisconnect.addListener(() => {
-    nativePort = null;
-    pollPending = false;
-
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
-
-    scheduleReconnect();
-  });
-
-  safePost({
-    type: "hello",
-    schema_version: 1
-  });
-
+chrome.runtime.onStartup.addListener(() => {
   startPolling();
-}
+});
 
-connectNativeHost();
+chrome.runtime.onInstalled.addListener(() => {
+  startPolling();
+});
+
+startPolling();

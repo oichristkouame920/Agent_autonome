@@ -702,7 +702,7 @@
     "allow_subdomains": false,
     "allow_from_routine": false,
     "allow_from_habit": false,
-    "manual_edge_strategy": "native_extension_bridge",
+    "manual_edge_strategy": "local_http_extension_bridge",
     "allow_ui_automation_fallback": false
   }
 }

@@ -33,3 +33,5 @@ Desktop.ini
 # Secrets éventuels
 .env
 .env.*
+config/browser_bridge.json
+browser_extension/bridge_config.js
