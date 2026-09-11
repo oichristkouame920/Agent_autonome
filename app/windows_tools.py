@@ -3540,3 +3540,351 @@ if __name__ == "__main__":
     )
 
     print()
+
+# ============================================================
+# GESTION CONTROLEE DES FENETRES
+# ============================================================
+
+WINDOW_MANAGEMENT_OPERATIONS = {
+    "focus",
+    "maximize",
+    "minimize",
+    "restore",
+    "snap_left",
+    "snap_right",
+}
+
+
+def get_window_management_policy():
+    """Retourne une politique fermee et sure en cas de config invalide."""
+
+    permissions = load_permissions()
+    policy = permissions.get(
+        "window_management",
+        {}
+    )
+
+    if not isinstance(policy, dict):
+        policy = {}
+
+    allowed_operations = policy.get(
+        "allowed_operations",
+        []
+    )
+    if not isinstance(allowed_operations, list):
+        allowed_operations = []
+
+    allowed_applications = policy.get(
+        "allowed_applications",
+        []
+    )
+    if not isinstance(allowed_applications, list):
+        allowed_applications = []
+
+    return {
+        "enabled": bool(policy.get("enabled", False)),
+        "deny_by_default": bool(policy.get("deny_by_default", True)),
+        "require_explicit_user_command": bool(
+            policy.get("require_explicit_user_command", True)
+        ),
+        "allow_from_routine": bool(policy.get("allow_from_routine", False)),
+        "allow_from_habit": bool(policy.get("allow_from_habit", False)),
+        "auto_launch_missing_application": bool(
+            policy.get("auto_launch_missing_application", False)
+        ),
+        "require_single_visible_window": bool(
+            policy.get("require_single_visible_window", True)
+        ),
+        "allowed_operations": {
+            str(value).strip().lower()
+            for value in allowed_operations
+            if isinstance(value, str)
+        },
+        "allowed_applications": {
+            str(value).strip().lower()
+            for value in allowed_applications
+            if isinstance(value, str)
+        },
+    }
+
+
+def is_window_management_allowed(
+    app_name,
+    operation,
+    source="unspecified",
+    explicit_user_command=False
+):
+    """Valide la source, l'application et l'operation avant tout Win32."""
+
+    policy = get_window_management_policy()
+
+    if not policy["enabled"]:
+        return False, "La gestion des fenêtres est désactivée."
+
+    app_name = str(app_name or "").strip().lower()
+    operation = str(operation or "").strip().lower()
+    source = str(source or "").strip().lower()
+
+    if (
+        not app_name
+        or app_name not in PROCESS_MAP
+        or is_hard_blocked_application(app_name)
+    ):
+        return False, "Cette application ne peut pas être gérée."
+
+    application = get_application_config(app_name)
+    if not application or not bool(application.get("enabled", False)):
+        return False, "Cette application est désactivée dans les permissions."
+
+    if app_name not in policy["allowed_applications"]:
+        return False, "La gestion de cette application n'est pas autorisée."
+
+    if (
+        operation not in WINDOW_MANAGEMENT_OPERATIONS
+        or operation not in policy["allowed_operations"]
+    ):
+        return False, "Cette opération de fenêtre n'est pas autorisée."
+
+    if source == "manual":
+        if (
+            policy["require_explicit_user_command"]
+            and not explicit_user_command
+        ):
+            return False, "Une commande utilisateur explicite est requise."
+        return True, None
+
+    if source == "routine":
+        if not policy["allow_from_routine"]:
+            return False, "La gestion des fenêtres est interdite dans les routines."
+        return True, None
+
+    if source == "habit":
+        if not policy["allow_from_habit"]:
+            return False, "La gestion des fenêtres est interdite dans les habitudes."
+        return True, None
+
+    return False, "Source de commande non autorisée."
+
+
+def get_single_application_window_record(app_name):
+    """
+    Ne choisit jamais arbitrairement entre plusieurs fenêtres visibles.
+    """
+
+    records = get_application_window_records(app_name)
+
+    if not records:
+        return False, None, "Aucune fenêtre visible de cette application n'a été trouvée."
+
+    policy = get_window_management_policy()
+
+    if policy["require_single_visible_window"] and len(records) != 1:
+        return (
+            False,
+            None,
+            (
+                f"Plusieurs fenêtres de {DISPLAY_NAMES.get(app_name, app_name)} sont ouvertes. "
+                "Je ne choisis pas laquelle déplacer ou redimensionner automatiquement."
+            )
+        )
+
+    return True, records[0], None
+
+
+def _get_window_work_area(hwnd):
+    """Retourne la zone de travail du moniteur qui contient la fenêtre."""
+
+    class RECT(ctypes.Structure):
+        _fields_ = [
+            ("left", wintypes.LONG),
+            ("top", wintypes.LONG),
+            ("right", wintypes.LONG),
+            ("bottom", wintypes.LONG),
+        ]
+
+    class MONITORINFO(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("rcMonitor", RECT),
+            ("rcWork", RECT),
+            ("dwFlags", wintypes.DWORD),
+        ]
+
+    user32 = ctypes.windll.user32
+    MONITOR_DEFAULTTONEAREST = 2
+
+    # Signatures explicites : HWND/HMONITOR sont de taille pointeur sur Windows x64.
+    user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+    user32.MonitorFromWindow.restype = wintypes.HANDLE
+    user32.GetMonitorInfoW.argtypes = [wintypes.HANDLE, ctypes.POINTER(MONITORINFO)]
+    user32.GetMonitorInfoW.restype = wintypes.BOOL
+
+    monitor = user32.MonitorFromWindow(
+        int(hwnd),
+        MONITOR_DEFAULTTONEAREST
+    )
+
+    if not monitor:
+        return None
+
+    info = MONITORINFO()
+    info.cbSize = ctypes.sizeof(MONITORINFO)
+
+    if not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+        return None
+
+    return (
+        int(info.rcWork.left),
+        int(info.rcWork.top),
+        int(info.rcWork.right),
+        int(info.rcWork.bottom),
+    )
+
+
+def _apply_window_operation(hwnd, operation):
+    """Applique une seule operation Win32 sans lancer ni fermer d'application."""
+
+    user32 = ctypes.windll.user32
+
+    # Signatures explicites pour eviter toute troncature de handle sur Windows x64.
+    user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.ShowWindow.restype = wintypes.BOOL
+    user32.IsIconic.argtypes = [wintypes.HWND]
+    user32.IsIconic.restype = wintypes.BOOL
+    user32.GetForegroundWindow.argtypes = []
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+    user32.SetForegroundWindow.restype = wintypes.BOOL
+    user32.SetWindowPos.argtypes = [
+        wintypes.HWND,
+        wintypes.HWND,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        wintypes.UINT,
+    ]
+    user32.SetWindowPos.restype = wintypes.BOOL
+
+    SW_MINIMIZE = 6
+    SW_MAXIMIZE = 3
+    SW_RESTORE = 9
+    SWP_NOZORDER = 0x0004
+
+    if operation == "minimize":
+        user32.ShowWindow(int(hwnd), SW_MINIMIZE)
+        return True, "Fenêtre réduite."
+
+    if operation == "maximize":
+        user32.ShowWindow(int(hwnd), SW_MAXIMIZE)
+        return True, "Fenêtre agrandie."
+
+    if operation == "restore":
+        user32.ShowWindow(int(hwnd), SW_RESTORE)
+        return True, "Fenêtre restaurée."
+
+    if operation == "focus":
+        if user32.IsIconic(int(hwnd)):
+            user32.ShowWindow(int(hwnd), SW_RESTORE)
+
+        if int(user32.GetForegroundWindow() or 0) != int(hwnd):
+            if not user32.SetForegroundWindow(int(hwnd)):
+                return False, "Windows n'a pas autorisé la mise au premier plan."
+
+        return True, "Fenêtre mise au premier plan."
+
+    if operation in {"snap_left", "snap_right"}:
+        work_area = _get_window_work_area(hwnd)
+        if work_area is None:
+            return False, "Impossible de déterminer la zone de travail de l'écran."
+
+        left, top, right, bottom = work_area
+        width = max(1, right - left)
+        height = max(1, bottom - top)
+        half = max(1, width // 2)
+
+        if operation == "snap_left":
+            x = left
+            target_width = half
+            message = "Fenêtre placée sur la moitié gauche de l'écran."
+        else:
+            x = left + half
+            target_width = max(1, width - half)
+            message = "Fenêtre placée sur la moitié droite de l'écran."
+
+        user32.ShowWindow(int(hwnd), SW_RESTORE)
+
+        if not user32.SetWindowPos(
+            int(hwnd),
+            0,
+            int(x),
+            int(top),
+            int(target_width),
+            int(height),
+            SWP_NOZORDER
+        ):
+            return False, "Windows a refusé le déplacement de la fenêtre."
+
+        return True, message
+
+    return False, "Opération de fenêtre inconnue."
+
+
+def manage_application_window(
+    app_name,
+    operation,
+    source="unspecified",
+    explicit_user_command=False
+):
+    """
+    Gestion volontairement limitee d'UNE fenêtre d'une application autorisee.
+
+    - aucune ouverture automatique ;
+    - aucun contrôle global du Bureau ;
+    - aucune selection arbitraire si plusieurs fenêtres sont ouvertes ;
+    - routines et habitudes bloquees par defaut.
+    """
+
+    windows_info = get_windows_info()
+    if not windows_info["supported"]:
+        return False, "AgentLocal prend en charge Windows 10 et Windows 11."
+
+    app_name = str(app_name or "").strip().lower()
+    operation = str(operation or "").strip().lower()
+
+    allowed, error = is_window_management_allowed(
+        app_name,
+        operation,
+        source=source,
+        explicit_user_command=explicit_user_command
+    )
+    if not allowed:
+        return False, error
+
+    # Le mode volontairement prudent n'ouvre jamais l'application manquante.
+    ok, record, error = get_single_application_window_record(app_name)
+    if not ok:
+        return False, error
+
+    if not is_expected_application_window(
+        record["hwnd"],
+        app_name,
+        expected_pid=record.get("window_pid"),
+        expected_process_create_time=record.get("window_process_create_time")
+    ):
+        return False, "La fenêtre a changé avant l'action ; aucune modification n'a été faite."
+
+    try:
+        success, message = _apply_window_operation(
+            record["hwnd"],
+            operation
+        )
+    except Exception as error:
+        return False, f"Impossible de modifier la fenêtre : {error}"
+
+    if not success:
+        return False, message
+
+    display_name = DISPLAY_NAMES.get(app_name, app_name)
+    return True, f"{display_name} : {message}"
+

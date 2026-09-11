@@ -70,3 +70,8 @@ de langage naturel et de securite.
 
 Lancer les tests depuis la racine du projet :
     python -m unittest -v tests.test_natural_language
+
+Version V2
+----------
+Une extension plus conversationnelle et plus stricte sur les references
+ambigues est documentee dans README_NATURAL_LANGUAGE_V2.txt.

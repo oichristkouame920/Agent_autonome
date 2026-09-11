@@ -1,5 +1,6 @@
 import importlib
 import json
+import re
 
 from pathlib import Path
 
@@ -9,6 +10,7 @@ from pathlib import Path
 # ============================================================
 
 SCHEMA_VERSION = 1
+ROUTING_PATCH_VERSION = "2026-09-11-v6-ci"
 
 
 # ============================================================
@@ -444,6 +446,86 @@ def select_backend():
 
 
 # ============================================================
+# PRE-INTERPRETATION DETERMINISTE A HAUTE CONFIANCE
+# ============================================================
+
+DETERMINISTIC_PREFLIGHT_ACTIONS = {
+    "open_application",
+    "close_application",
+    "check_application",
+    "manage_window",
+    "run_routine",
+    "open_website",
+    "close_website",
+}
+
+
+def _is_high_confidence_deterministic_result(result, module):
+    """
+    Ne court-circuite le backend principal que pour une intention explicite
+    et fermee. Les operations fichiers restent hors preflight afin de ne pas
+    transformer un nom libre en action par deduction.
+    """
+    if not isinstance(result, dict) or not result.get("understood"):
+        return False
+
+    actions = result.get("actions", [])
+    if not isinstance(actions, list):
+        return False
+
+    # Petite conversation locale (aide, organisation ambigue des fenetres, etc.).
+    if not actions:
+        return bool(result.get("conversation") and str(result.get("reply", "")).strip())
+
+    configured_sites = set()
+    loader = getattr(module, "load_site_names", None)
+    if callable(loader):
+        try:
+            configured_sites = set(loader())
+        except Exception:
+            configured_sites = set()
+
+    for item in actions:
+        if not isinstance(item, dict):
+            return False
+        action = str(item.get("action", "")).strip().lower()
+        target = str(item.get("target", "")).strip().lower()
+
+        if action not in DETERMINISTIC_PREFLIGHT_ACTIONS:
+            return False
+
+        # Un nom de site generique n'est pas suffisant : il doit deja etre
+        # present dans la liste blanche sites.json.
+        if action in {"open_website", "close_website"}:
+            explicit_domain = bool(
+                re.fullmatch(r"[a-z0-9][a-z0-9.-]*\.[a-z]{2,63}", target)
+            )
+            if target not in configured_sites and not explicit_domain:
+                return False
+
+    return True
+
+
+def _deterministic_preflight(user_message):
+    success, module, _ = load_backend_module("deterministic")
+    if not success or module is None:
+        return None
+
+    try:
+        result = module.interpret(user_message)
+    except Exception:
+        return None
+
+    if _is_high_confidence_deterministic_result(result, module):
+        result = dict(result)
+        result["backend"] = "deterministic"
+        result["routing"] = "deterministic_preflight"
+        return result
+
+    return None
+
+
+# ============================================================
 # INTERPRETATION
 # ============================================================
 
@@ -470,6 +552,16 @@ def interpret(
             "actions": [],
             "error": warning,
         }
+
+    # Les intentions explicites et fermees sont d'abord verifiees par le
+    # moteur deterministe. Cela evite de charger/invoquer le LLM pour une
+    # commande simple et garantit le meme comportement dans la GUI.
+    if backend_name != "deterministic":
+        preflight = _deterministic_preflight(user_message)
+        if preflight is not None:
+            if warning:
+                preflight["backend_warning"] = warning
+            return preflight
 
     try:
 

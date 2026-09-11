@@ -112,6 +112,7 @@ from windows_tools import (
     close_application,
     get_application_config,
     is_application_running,
+    manage_application_window,
     open_application,
 )
 
@@ -247,6 +248,7 @@ FILE_ACTIONS_REQUIRING_EXPLICIT_PROOF = {
 INTERACTIVE_ACTIONS_REQUIRING_EXPLICIT_PROOF = {
     "open_application",
     "close_application",
+    "manage_window",
     "open_website",
     "close_website",
 }
@@ -309,6 +311,7 @@ SUPPORTED_ACTIONS = {
     "open_application",
     "close_application",
     "check_application",
+    "manage_window",
 
     # Web
     "open_website",
@@ -2149,7 +2152,8 @@ def verify_explicit_file_action(
 def verify_explicit_interactive_action(
     user_message,
     action,
-    target
+    target,
+    params=None
 ):
     """
     Réinterprète la phrase brute avec le parseur déterministe
@@ -2210,6 +2214,13 @@ def verify_explicit_interactive_action(
         .lower()
     )
 
+    expected_params = params if isinstance(params, dict) else {}
+    expected_operation = (
+        str(expected_params.get("operation", ""))
+        .strip()
+        .lower()
+    )
+
     for candidate in actions:
         if not isinstance(
             candidate,
@@ -2248,6 +2259,19 @@ def verify_explicit_interactive_action(
             ==
             expected_target
         ):
+
+            if expected_action == "manage_window":
+                candidate_params = candidate.get("params", {})
+                if not isinstance(candidate_params, dict):
+                    continue
+                candidate_operation = (
+                    str(candidate_params.get("operation", ""))
+                    .strip()
+                    .lower()
+                )
+                if candidate_operation != expected_operation:
+                    continue
+
             return (
                 True,
                 None
@@ -2256,8 +2280,8 @@ def verify_explicit_interactive_action(
     return (
         False,
         (
-            "Commande refusée : l'ouverture ou la fermeture "
-            "proposée ne correspond pas exactement à la phrase "
+            "Commande refusée : l'action interactive proposée "
+            "ne correspond pas exactement à la phrase "
             "écrite par l'utilisateur."
         )
     )
@@ -2425,6 +2449,7 @@ def validate_action(
         "open_application",
         "close_application",
         "check_application",
+        "manage_window",
         "open_website",
         "close_website",
     }:
@@ -2496,6 +2521,37 @@ def validate_action(
             False,
             "Paramètres invalides."
         )
+
+    # ========================================================
+    # GESTION FENETRE
+    # ========================================================
+
+    if action == "manage_window":
+
+        if set(params.keys()) != {"operation"}:
+            return (
+                False,
+                "Paramètres de gestion de fenêtre invalides."
+            )
+
+        operation = (
+            str(params.get("operation", ""))
+            .strip()
+            .lower()
+        )
+
+        if operation not in {
+            "focus",
+            "maximize",
+            "minimize",
+            "restore",
+            "snap_left",
+            "snap_right",
+        }:
+            return (
+                False,
+                "Opération de fenêtre inconnue ou interdite."
+            )
 
     # ========================================================
     # CREATION DOSSIER
@@ -3663,7 +3719,8 @@ def execute_action(
             verify_explicit_interactive_action(
                 user_message,
                 action,
-                target
+                target,
+                params=params
             )
         )
 
@@ -3710,6 +3767,17 @@ def execute_action(
         return (
             True,
             message
+        )
+
+    if action == "manage_window":
+
+        return manage_application_window(
+            target,
+            params["operation"],
+            source="manual",
+            explicit_user_command=(
+                explicit_interactive_command
+            )
         )
 
     # ========================================================
@@ -4464,10 +4532,11 @@ def process_instruction(
             )
 
         return (
-            "Je n'ai pas encore reconnu cette demande. "
-            "Précise simplement l'action et la cible, par exemple : "
-            "« ouvre-moi GitHub », « cherche-moi le fichier rapport » "
-            "ou « montre-moi ce qu'il y a dans Documents »."
+            "Je n'ai pas bien compris cette demande. "
+            "Tu peux la reformuler naturellement en indiquant ce que tu veux faire, "
+            "par exemple : « retrouve mon rapport dans Documents », "
+            "« ouvre ce qu'il faut pour rédiger un document » ou "
+            "« montre-moi ce qu'il y a dans Téléchargements »."
         )
 
     display_results, activity_results = (
@@ -4601,7 +4670,7 @@ def main():
     print()
 
     print(
-        "Tape 'sort' ou 'arrête' pour arrête."
+        "Tape 'sort' ou 'arrête' pour arrêter l'agent."
     )
 
     print()
@@ -4615,7 +4684,7 @@ def main():
         try:
 
             user_message = input(
-                "De quoi avez-vous besoin ? > "
+                "Que veux-tu faire ? > "
             ).strip()
 
         except (
@@ -4760,6 +4829,26 @@ FILE_ACTIONS_REQUIRING_EXPLICIT_PROOF.update(
 )
 
 
+_VAGUE_FILE_REFERENCES_FOR_VALIDATION = {
+    "fichier", "le fichier", "la fichier", "un fichier", "ce fichier", "mon fichier",
+    "document", "le document", "un document", "ce document", "mon document",
+    "dossier", "le dossier", "un dossier", "ce dossier", "mon dossier",
+    "quelque chose", "un truc", "le truc", "ce truc", "ca", "cela",
+    "celui ci", "celui la", "le dernier fichier", "le dernier document",
+    "le dernier dossier", "lui",
+}
+
+
+def _contract_is_vague_reference(value):
+    if not isinstance(value, str):
+        return False
+    normalized = unicodedata.normalize("NFKD", value.lower().replace("’", "'"))
+    normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    normalized = normalized.replace("-", " ")
+    normalized = re.sub(r"\s+", " ", normalized).strip(" .!?")
+    return normalized in _VAGUE_FILE_REFERENCES_FOR_VALIDATION
+
+
 def _contract_relative_path_ok(value, allow_empty=False, simple_only=False):
     if value is None:
         return allow_empty
@@ -4768,6 +4857,8 @@ def _contract_relative_path_ok(value, allow_empty=False, simple_only=False):
     value = value.strip()
     if not value:
         return allow_empty
+    if _contract_is_vague_reference(value):
+        return False
     if len(value) > 1024:
         return False
     if value.startswith(("\\\\", "//", "\\", "/")):

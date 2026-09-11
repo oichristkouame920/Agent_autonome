@@ -959,5 +959,37 @@
     "allow_from_habit": false,
     "manual_edge_strategy": "local_http_extension_bridge",
     "allow_ui_automation_fallback": false
+  },
+  "window_management": {
+    "enabled": true,
+    "deny_by_default": true,
+    "require_explicit_user_command": true,
+    "allow_from_routine": false,
+    "allow_from_habit": false,
+    "auto_launch_missing_application": false,
+    "require_single_visible_window": true,
+    "allowed_operations": [
+      "focus",
+      "maximize",
+      "minimize",
+      "restore",
+      "snap_left",
+      "snap_right"
+    ],
+    "allowed_applications": [
+      "edge",
+      "vscode",
+      "explorer",
+      "android_studio",
+      "notepad",
+      "calculator",
+      "paint",
+      "teams",
+      "word",
+      "excel",
+      "powerpoint",
+      "outlook",
+      "onenote"
+    ]
   }
 }
