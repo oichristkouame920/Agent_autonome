@@ -991,5 +991,61 @@
       "outlook",
       "onenote"
     ]
+  },
+  "system_information_policy": {
+    "enabled": true,
+    "read_only": true,
+    "require_explicit_user_command": true,
+    "allowed_queries": [
+      "memory",
+      "disk",
+      "cpu",
+      "uptime",
+      "summary"
+    ],
+    "allow_from_routine": false,
+    "allow_from_habit": false,
+    "allow_automatic_query": false
+  },
+  "clipboard_policy": {
+    "enabled": true,
+    "require_explicit_user_command": true,
+    "text_only": true,
+    "allow_read_text": true,
+    "allow_write_text": true,
+    "allow_copy_authorized_file_path": true,
+    "maximum_text_characters": 8192,
+    "allow_execute_clipboard_content": false,
+    "allow_open_clipboard_url": false,
+    "allow_from_routine": false,
+    "allow_from_habit": false,
+    "allow_automatic_access": false
+  },
+  "browser_tab_policy": {
+    "enabled": true,
+    "require_explicit_user_command": true,
+    "edge_only": true,
+    "bridge_required": true,
+    "allow_list_tabs": true,
+    "allow_activate_tab": true,
+    "maximum_listed_tabs": 20,
+    "allow_subdomains": false,
+    "allow_close_tab_via_this_policy": false,
+    "allow_from_routine": false,
+    "allow_from_habit": false,
+    "allow_automatic_access": false
+  },
+  "session_context_policy": {
+    "enabled": true,
+    "require_explicit_user_command": true,
+    "memory_only": true,
+    "persist_to_disk": false,
+    "maximum_references": 1,
+    "allow_open_last_reference": true,
+    "allow_read_last_reference": true,
+    "allow_copy_last_reference_path": true,
+    "allow_from_routine": false,
+    "allow_from_habit": false,
+    "allow_automatic_action": false
   }
 }

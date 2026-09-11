@@ -10,7 +10,7 @@ from pathlib import Path
 # ============================================================
 
 SCHEMA_VERSION = 1
-ROUTING_PATCH_VERSION = "2026-09-11-v6-ci"
+ROUTING_PATCH_VERSION = "2026-09-11-actions-v1"
 
 
 # ============================================================
@@ -457,6 +457,15 @@ DETERMINISTIC_PREFLIGHT_ACTIONS = {
     "run_routine",
     "open_website",
     "close_website",
+    "read_system_info",
+    "read_clipboard",
+    "write_clipboard",
+    "copy_file_path",
+    "list_browser_tabs",
+    "activate_browser_tab",
+    "open_last_reference",
+    "read_last_reference",
+    "copy_last_reference_path",
 }
 
 

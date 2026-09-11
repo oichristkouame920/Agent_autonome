@@ -9,7 +9,7 @@ from pathlib import Path
 # ============================================================
 
 SCHEMA_VERSION = 1
-NATURAL_LANGUAGE_PATCH_VERSION = "2026-09-11-v6-ci"
+NATURAL_LANGUAGE_PATCH_VERSION = "2026-09-11-actions-v1"
 
 
 # ============================================================
@@ -659,6 +659,12 @@ def _has_literal_content_payload(text):
         " ajouter au fichier ",
         " ajoute a fichier ",
         " ajouter a fichier ",
+        " copie ce texte",
+        " copier ce texte",
+        " copie dans le presse papiers",
+        " copier dans le presse papiers",
+        " mets dans le presse papiers",
+        " met dans le presse papiers",
     )
     padded = f" {normalized} "
     return any(marker in padded for marker in markers)
@@ -1201,9 +1207,9 @@ def _is_explicit_negative_request(text):
         r"^(?:il\s+)?faut\s+pas\b",
         r"^pas\s+la\s+peine\b",
         r"^je\s+(?:ne\s+)?veux\s+pas\b",
-        r"^n[' ]?(?:ouvre|lance|demarre|ferme|verifie|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met)\s+pas\b",
-        r"^ne\s+(?:ouvre|lance|demarre|ferme|verifie|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met)\s+pas\b",
-        r"^(?:ouvre|lance|demarre|ferme|verifie|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met)\s+pas\b",
+        r"^n[' ]?(?:ouvre|lance|demarre|ferme|verifie|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active)\s+pas\b",
+        r"^ne\s+(?:ouvre|lance|demarre|ferme|verifie|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active)\s+pas\b",
+        r"^(?:ouvre|lance|demarre|ferme|verifie|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active)\s+pas\b",
     )
     return any(re.search(pattern, value) for pattern in patterns)
 
@@ -5159,6 +5165,151 @@ def _as_unrecognized_result(result):
     }
 
 
+
+
+# ============================================================
+# ACTIONS LOCALES V1 - ACCÈS CONTRÔLÉ
+# ============================================================
+
+def _normalize_root_for_controlled_action(value):
+    normalized = normalize_text(value).strip(" .!?")
+    normalized = re.sub(r"^(?:mes|mon|ma|le|la|les)\s+", "", normalized)
+    return FILE_ROOT_ALIASES.get(normalized)
+
+
+def parse_controlled_local_command(user_message):
+    """Parse uniquement des intentions fermées et explicitement demandées."""
+    raw = str(user_message or "").strip().replace("’", "'")
+    text = normalize_text(raw).strip(" .!?")
+    if not text:
+        return []
+    plain = re.sub(r"[-]+", " ", text)
+    plain = re.sub(r"\s+", " ", plain).strip()
+
+    # --------------------------------------------------------
+    # Informations système en lecture seule
+    # --------------------------------------------------------
+    system_patterns = (
+        ("memory", (
+            r"(?:j'utilise|j utilise) combien de ram",
+            r"combien de ram (?:j'utilise|j utilise)",
+            r"(?:mon )?pc utilise combien de ram",
+            r"(?:regarde|dis moi|montre) (?:un peu )?combien de ram (?:j'utilise|j utilise)",
+            r"(?:la )?ram (?:la )?ca (?:prend|utilise) combien",
+            r"(?:montre|donne moi|affiche) (?:l'utilisation|l utilisation|l'etat|l etat) (?:de )?(?:la )?(?:ram|memoire vive)",
+            r"(?:utilisation|etat) (?:de )?(?:la )?(?:ram|memoire vive)",
+            r"(?:ma )?ram (?:est )?(?:utilisee|utilise) a combien",
+        )),
+        ("disk", (
+            r"(?:il reste|il me reste|j'ai|j ai) combien (?:d'espace|d espace) (?:sur )?(?:mon )?disque(?: c)?",
+            r"(?:mon )?disque (?:la )?(?:il )?reste combien",
+            r"(?:regarde|dis moi|montre) (?:un peu )?combien (?:d'espace|d espace) (?:il )?reste (?:sur )?(?:mon )?disque(?: c)?",
+            r"combien (?:d'espace|d espace) (?:il )?reste (?:sur )?(?:mon )?disque(?: c)?",
+            r"(?:montre|donne moi|affiche) (?:l'espace|l espace) (?:libre )?(?:sur )?(?:mon )?disque(?: c)?",
+            r"(?:espace disque|espace libre(?: sur)?(?: le)? disque(?: c)?)",
+        )),
+        ("cpu", (
+            r"(?:mon )?(?:cpu|processeur) (?:travaille|tourne|est utilise) a combien",
+            r"(?:le )?(?:cpu|processeur) (?:la )?ca tourne a combien",
+            r"(?:regarde|dis moi|montre) (?:un peu )?(?:l'utilisation|l utilisation) (?:du )?(?:cpu|processeur)",
+            r"(?:montre|donne moi|affiche) (?:l'utilisation|l utilisation) (?:du )?(?:cpu|processeur)",
+            r"(?:utilisation|etat) (?:du )?(?:cpu|processeur)",
+        )),
+        ("uptime", (
+            r"depuis combien de temps (?:le |mon )?pc est allume",
+            r"(?:le |mon )?pc est allume depuis quand",
+            r"(?:le |mon )?pc est allume depuis combien de temps",
+            r"(?:temps de fonctionnement|temps depuis le demarrage|uptime)(?: du pc)?",
+        )),
+        ("summary", (
+            r"(?:montre|donne moi|affiche)?\s*(?:l'etat|l etat|les infos|les informations) (?:de )?(?:mon |du )?(?:pc|systeme)",
+            r"(?:etat|infos|informations) systeme",
+            r"comment va (?:mon )?pc",
+        )),
+    )
+    for query, patterns in system_patterns:
+        if any(re.fullmatch(pattern, plain) for pattern in patterns):
+            return [make_action("read_system_info", query)]
+
+    # --------------------------------------------------------
+    # Presse-papiers texte
+    # --------------------------------------------------------
+    if text in {
+        "qu'est ce que j'ai copie", "qu'est-ce que j'ai copie", "j'ai copie quoi",
+        "montre moi ce que j'ai copie", "montre ce que j'ai copie",
+        "affiche ce que j'ai copie", "dis moi ce que j'ai copie", "dis ce que j'ai copie",
+        "j'ai copie quoi la",
+        "lis le presse papiers", "lis le presse-papiers", "montre le presse papiers",
+        "montre le presse-papiers", "affiche le presse papiers", "affiche le presse-papiers",
+        "contenu du presse papiers", "contenu du presse-papiers",
+    }:
+        return [make_action("read_clipboard", "clipboard")]
+
+    clipboard_patterns = (
+        r"^(?:copie|copier)\s+(?:ce|le)\s+texte\s*:\s*(.+)$",
+        r"^(?:copie|copier|mets|met)\s+dans\s+le\s+presse[- ]papiers\s*:\s*(.+)$",
+    )
+    for pattern in clipboard_patterns:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE | re.DOTALL)
+        if match:
+            content = match.group(1)
+            if content:
+                return [make_action("write_clipboard", "clipboard", {"text": content})]
+
+    # Copie contrôlée du chemin d'un fichier dans une racine nommée.
+    match = re.fullmatch(
+        r"(?:copie|copier)\s+le\s+chemin\s+(?:du\s+fichier\s+|de\s+)?(.+?)\s+dans\s+"
+        r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+        r"(bureau|documents?|t[eé]l[eé]chargements?|downloads?|images?|photos?|vid[eé]os?|musique)",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        root = _normalize_root_for_controlled_action(match.group(2))
+        file_name = match.group(1).strip()
+        if root and file_name and not is_vague_filesystem_reference(file_name):
+            return [make_action("copy_file_path", root, {"file_name": file_name})]
+
+    # --------------------------------------------------------
+    # Onglets Edge via pont local existant
+    # --------------------------------------------------------
+    if text in {
+        "liste mes onglets", "liste les onglets", "montre mes onglets", "montre les onglets",
+        "affiche mes onglets", "affiche les onglets", "montre mes onglets edge",
+        "montre les onglets edge", "quels onglets sont ouverts",
+        "quels sont mes onglets", "y a quoi comme onglets", "il y a quoi comme onglets",
+        "y a quoi d'ouvert dans edge", "il y a quoi d'ouvert dans edge",
+    }:
+        return [make_action("list_browser_tabs", "edge")]
+
+    match = re.fullmatch(
+        r"(?:passe|passer|va|aller|active|activer|mets|met)\s+(?:sur\s+)?(?:l'onglet|l onglet|onglet)\s+(.+)",
+        text,
+    )
+    if match:
+        site = match.group(1).strip()
+        if site and site not in {"ca", "cela", "ceci", "le", "la", "lui"}:
+            return [make_action("activate_browser_tab", site)]
+
+    # --------------------------------------------------------
+    # Référence conversationnelle temporaire
+    # --------------------------------------------------------
+    pronoun = text.replace("-", " ")
+    pronoun = re.sub(r"\s+(?:la|hein|meme|ou bien|un peu)$", "", pronoun).strip()
+    pronoun = re.sub(r"\s+", " ", pronoun).strip()
+    if pronoun in {"ouvre le", "ouvre lui", "ouvre celui la", "ouvre celui ci"}:
+        return [make_action("open_last_reference", "session")]
+    if pronoun in {"lis le", "lis lui", "lis celui la", "lis celui ci"}:
+        return [make_action("read_last_reference", "session")]
+    if pronoun in {
+        "copie son chemin", "copie le chemin de celui la", "copie le chemin de celui ci",
+        "copie le chemin du dernier", "copie le chemin du fichier precedent",
+    }:
+        return [make_action("copy_last_reference_path", "session")]
+
+    return []
+
+
 def _interpret_strict_message(user_message):
     """Interprete une phrase sans reformulation conversationnelle."""
 
@@ -5169,6 +5320,15 @@ def _interpret_strict_message(user_message):
             "backend": "deterministic",
             "understood": True,
             "actions": habit_actions,
+        }
+
+    actions = parse_controlled_local_command(user_message)
+    if actions:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "backend": "deterministic",
+            "understood": True,
+            "actions": actions,
         }
 
     actions = parse_recursive_filesystem_command(user_message)
@@ -5226,13 +5386,13 @@ def parse_local_conversation(user_message):
         "qu'est-ce que tu peux faire", "qu'est ce que tu sais faire", "tu sais faire quoi",
     }:
         return (
-            "Je peux ouvrir ou fermer les applications et sites autorisés, "
-            "lancer tes routines, vérifier une application, gérer explicitement une fenêtre "
-            "autorisée (premier plan, agrandir, réduire, restaurer, gauche ou droite), et "
-            "travailler de façon contrôlée dans Bureau, Documents, Téléchargements, Images, "
-            "Vidéos et Musique. Tu peux me parler normalement, par exemple : « retrouve mon "
-            "rapport dans Documents », « ouvre ce qu'il faut pour rédiger un document » ou "
-            "« mets VS Code à gauche »."
+            "Je peux ouvrir ou fermer les applications et sites autorisés, lancer tes routines, "
+            "vérifier une application, gérer explicitement une fenêtre autorisée, consulter en "
+            "lecture seule la RAM, le CPU, le disque et le temps de fonctionnement du PC, lire "
+            "ou écrire du texte dans le presse-papiers sur demande, lister ou activer un onglet "
+            "Edge via le pont local, et travailler de façon contrôlée dans Bureau, Documents, "
+            "Téléchargements, Images, Vidéos et Musique. Je peux aussi retenir temporairement "
+            "un fichier trouvé pour comprendre ensuite « ouvre-le » ou « lis-le »."
         )
 
     if text in {"qui es tu", "qui es-tu", "c'est quoi agentlocal", "tu es qui"}:
@@ -5244,12 +5404,37 @@ def parse_local_conversation(user_message):
     return None
 
 
+def _is_clipboard_execution_request(text):
+    """Refuse l'exécution/ouverture automatique de ce qui est dans le presse-papiers."""
+    value = normalize_text(text).replace("-", " ").strip(" .!?")
+    value = re.sub(r"\s+", " ", value)
+    if "presse papiers" not in value and "ce que j'ai copie" not in value and "ce que j ai copie" not in value:
+        return False
+    return bool(re.search(
+        r"\b(?:ouvre|ouvrir|lance|lancer|execute|executer|demarre|demarrer|va sur|navigue vers)\b",
+        value,
+    ))
+
+
 def interpret(user_message):
     # Une formule de politesse finale est retiree avant l'analyse stricte.
     # Cela evite qu'un « stp » ou « s'il te plait » soit pris pour une partie
     # d'un nom de fichier. Le contenu litteral des commandes d'ecriture reste
     # toujours intact.
     original_message = str(user_message or "").strip()
+
+    if _is_clipboard_execution_request(original_message):
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "backend": "deterministic",
+            "understood": True,
+            "actions": [],
+            "reply": (
+                "Je peux lire ou écrire du texte dans le presse-papiers sur demande, "
+                "mais je n'exécute et je n'ouvre jamais automatiquement son contenu."
+            ),
+            "conversation": True,
+        }
 
     # Une negation explicite, y compris la forme orale "ouvre pas ..." ou
     # "faut pas ...", ne doit jamais devenir une action ni etre deleguee au LLM.

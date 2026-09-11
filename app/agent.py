@@ -5237,6 +5237,291 @@ def execute_action(action_data, user_message=None):
 
     return False, "Action fichier récursive non implémentée."
 
+
+# ============================================================
+# ACTIONS LOCALES V1 - ACCÈS CONTRÔLÉ
+# ============================================================
+
+from controlled_local_tools import (
+    activate_browser_tab as controlled_activate_browser_tab,
+    copy_file_path as controlled_copy_file_path,
+    copy_last_reference_path as controlled_copy_last_reference_path,
+    list_browser_tabs as controlled_list_browser_tabs,
+    open_last_reference as controlled_open_last_reference,
+    read_clipboard_text as controlled_read_clipboard_text,
+    read_last_reference as controlled_read_last_reference,
+    read_system_info as controlled_read_system_info,
+    validate_controlled_action_policy,
+    write_clipboard_text as controlled_write_clipboard_text,
+)
+from recursive_file_tools import get_unique_reference_for_context
+from session_context import clear_session_context, set_last_reference
+
+
+CONTROLLED_LOCAL_ACTIONS = {
+    "read_system_info",
+    "read_clipboard",
+    "write_clipboard",
+    "copy_file_path",
+    "list_browser_tabs",
+    "activate_browser_tab",
+    "open_last_reference",
+    "read_last_reference",
+    "copy_last_reference_path",
+}
+
+SUPPORTED_ACTIONS.update(CONTROLLED_LOCAL_ACTIONS)
+
+
+def _validate_controlled_local_contract(action_data):
+    if not isinstance(action_data, dict):
+        return False, "Format d'action invalide."
+    if action_data.get("schema_version") != SCHEMA_VERSION:
+        return False, "Version du contrat non supportée."
+
+    action = str(action_data.get("action", "")).strip().lower()
+    target = str(action_data.get("target", "")).strip().lower()
+    params = action_data.get("params")
+
+    if action not in CONTROLLED_LOCAL_ACTIONS:
+        return False, "Action locale contrôlée inconnue."
+
+    policy_ok, policy_error = validate_controlled_action_policy(action)
+    if not policy_ok:
+        return False, policy_error
+
+    no_params_actions = {
+        "read_system_info",
+        "read_clipboard",
+        "list_browser_tabs",
+        "activate_browser_tab",
+        "open_last_reference",
+        "read_last_reference",
+        "copy_last_reference_path",
+    }
+    if action in no_params_actions and params not in (None, {}):
+        return False, "Paramètres supplémentaires interdits pour cette action."
+
+    if action == "read_system_info":
+        if target not in {"memory", "disk", "cpu", "uptime", "summary"}:
+            return False, "Information système non autorisée."
+
+    elif action == "read_clipboard":
+        if target != "clipboard":
+            return False, "Cible du presse-papiers invalide."
+
+    elif action == "write_clipboard":
+        if target != "clipboard" or not isinstance(params, dict):
+            return False, "Contrat du presse-papiers invalide."
+        if set(params) != {"text"}:
+            return False, "Seul le texte explicitement demandé peut être copié."
+        text = params.get("text")
+        if not isinstance(text, str) or not text or "\x00" in text or len(text) > 8192:
+            return False, "Texte du presse-papiers invalide ou trop long."
+
+    elif action == "copy_file_path":
+        if target not in ALLOWED_FILE_ROOTS or not isinstance(params, dict):
+            return False, "Racine du fichier invalide."
+        if set(params) != {"file_name"}:
+            return False, "Paramètres de copie de chemin invalides."
+        if not _contract_relative_path_ok(params.get("file_name"), simple_only=True):
+            return False, "Nom de fichier à résoudre invalide."
+
+    elif action == "list_browser_tabs":
+        if target != "edge":
+            return False, "Seuls les onglets Edge sont autorisés."
+
+    elif action == "activate_browser_tab":
+        if not target or len(target) > 120:
+            return False, "Cible d'onglet invalide."
+        if any(token in target for token in ("\\", "/", ":", "*", "?", "\x00")):
+            return False, "Cible d'onglet invalide."
+
+    elif action in {"open_last_reference", "read_last_reference", "copy_last_reference_path"}:
+        if target != "session":
+            return False, "Cible de mémoire de session invalide."
+
+    return True, None
+
+
+_validate_action_before_controlled_local_v1 = validate_action
+
+
+def validate_action(action_data):
+    action = ""
+    if isinstance(action_data, dict):
+        action = str(action_data.get("action", "")).strip().lower()
+    if action in CONTROLLED_LOCAL_ACTIONS:
+        return _validate_controlled_local_contract(action_data)
+    return _validate_action_before_controlled_local_v1(action_data)
+
+
+def verify_explicit_controlled_action(user_message, action_data):
+    """La phrase brute doit produire exactement le même contrat déterministe."""
+    if not isinstance(user_message, str) or not user_message.strip():
+        return False, "Une commande utilisateur explicite est requise."
+
+    try:
+        proof = deterministic_proof_interpret(user_message)
+    except Exception:
+        return False, "Impossible de vérifier localement la commande utilisateur."
+
+    actions = proof.get("actions", []) if isinstance(proof, dict) else []
+    wanted = _canonical_contract_value(action_data)
+    for candidate in actions:
+        if _canonical_contract_value(candidate) == wanted:
+            return True, None
+    return False, (
+        "Commande refusée : l'action locale proposée ne correspond pas exactement "
+        "à la phrase écrite par l'utilisateur."
+    )
+
+
+def _remember_reference_from_successful_action(action_data):
+    """Mémorise au plus une référence déjà validée, uniquement en RAM."""
+    if not isinstance(action_data, dict):
+        return
+    action = str(action_data.get("action", "")).strip().lower()
+    target = str(action_data.get("target", "")).strip().lower()
+    params = action_data.get("params", {})
+    if not isinstance(params, dict):
+        params = {}
+
+    try:
+        if action == "find_filesystem_item":
+            ok, ref = get_unique_reference_for_context(
+                params.get("name"),
+                root_name=params.get("root_name"),
+                item_type=params.get("item_type", "any"),
+            )
+            if ok:
+                set_last_reference(ref["root_name"], ref["relative_path"], ref["item_type"])
+            return
+
+        if action in {"open_file", "read_file_content", "modify_file_content"}:
+            ok, ref = get_unique_reference_for_context(
+                params.get("file_name"), root_name=target, item_type="file"
+            )
+            if ok:
+                set_last_reference(ref["root_name"], ref["relative_path"], "file")
+            return
+
+        if action in {"open_file_auto", "read_file_auto"}:
+            ok, ref = get_unique_reference_for_context(
+                params.get("file_name"), root_name=None, item_type="file"
+            )
+            if ok:
+                set_last_reference(ref["root_name"], ref["relative_path"], "file")
+            return
+
+        if action == "create_file_with_content":
+            set_last_reference(target, params.get("file_name"), "file")
+            return
+
+        if action == "open_directory":
+            relative_path = str(params.get("relative_path", "")).strip()
+            if relative_path:
+                set_last_reference(target, relative_path, "dir")
+            return
+
+        if action == "open_directory_auto":
+            ok, ref = get_unique_reference_for_context(
+                params.get("directory_name"), root_name=None, item_type="dir"
+            )
+            if ok:
+                set_last_reference(ref["root_name"], ref["relative_path"], "dir")
+            return
+
+        if action == "create_folder":
+            set_last_reference(target, params.get("name"), "dir")
+            return
+
+        # Après une opération qui peut déplacer, renommer ou supprimer la
+        # dernière référence, on préfère oublier plutôt que viser un chemin périmé.
+        if action in {
+            "move_file_within_root", "move_file_between_roots", "rename_file",
+            "rename_file_auto", "delete_file", "delete_file_auto",
+        }:
+            clear_session_context()
+    except Exception:
+        # La mémoire de session est un confort : elle ne doit jamais faire
+        # échouer une action déjà autorisée.
+        return
+
+
+_execute_action_before_controlled_local_v1 = execute_action
+
+
+def execute_action(action_data, user_message=None):
+    action = ""
+    if isinstance(action_data, dict):
+        action = str(action_data.get("action", "")).strip().lower()
+
+    if action not in CONTROLLED_LOCAL_ACTIONS:
+        result = _execute_action_before_controlled_local_v1(
+            action_data, user_message=user_message
+        )
+        try:
+            success = bool(result[0])
+        except Exception:
+            success = False
+        if success:
+            _remember_reference_from_successful_action(action_data)
+        return result
+
+    valid, error = validate_action(action_data)
+    if not valid:
+        return False, error
+
+    explicit, proof_error = verify_explicit_controlled_action(user_message, action_data)
+    if not explicit:
+        return False, proof_error
+
+    target = str(action_data.get("target", "")).strip().lower()
+    params = action_data.get("params", {})
+    if not isinstance(params, dict):
+        params = {}
+
+    if action == "read_system_info":
+        return controlled_read_system_info(
+            target, explicit_user_command=True, source="manual"
+        )
+    if action == "read_clipboard":
+        return controlled_read_clipboard_text(
+            explicit_user_command=True, source="manual"
+        )
+    if action == "write_clipboard":
+        return controlled_write_clipboard_text(
+            params["text"], explicit_user_command=True, source="manual"
+        )
+    if action == "copy_file_path":
+        return controlled_copy_file_path(
+            target, params["file_name"], explicit_user_command=True, source="manual"
+        )
+    if action == "list_browser_tabs":
+        return controlled_list_browser_tabs(
+            explicit_user_command=True, source="manual"
+        )
+    if action == "activate_browser_tab":
+        return controlled_activate_browser_tab(
+            target, explicit_user_command=True, source="manual"
+        )
+    if action == "open_last_reference":
+        return controlled_open_last_reference(
+            explicit_user_command=True, source="manual"
+        )
+    if action == "read_last_reference":
+        return controlled_read_last_reference(
+            explicit_user_command=True, source="manual"
+        )
+    if action == "copy_last_reference_path":
+        return controlled_copy_last_reference_path(
+            explicit_user_command=True, source="manual"
+        )
+
+    return False, "Action locale contrôlée non implémentée."
+
+
 # ============================================================
 # DEMARRAGE
 # ============================================================

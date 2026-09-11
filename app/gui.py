@@ -204,7 +204,7 @@ class AgentLocalGUI:
 
         ttk.Label(
             help_frame,
-            text="Exemple : Mets VS Code à gauche   |   Entrée = exécuter   |   Ctrl+L = effacer",
+            text="Exemple : état du PC   |   Entrée = exécuter   |   Ctrl+L = effacer",
             style="Subtitle.TLabel",
         ).grid(row=0, column=0, sticky="w")
         ttk.Label(help_frame, textvariable=self.status_var, style="Status.TLabel").grid(
@@ -279,6 +279,18 @@ class AgentLocalGUI:
             )
             return
 
+        exit_text = command.lower().strip().replace("’", "'")
+        if exit_text in {
+            "sort", "quitte", "quitter", "ferme agentlocal",
+            "ferme cette fenêtre", "ferme cette fenetre",
+            "arrête agentlocal", "arrete agentlocal",
+        }:
+            self.command_var.set("")
+            self._append_user(command)
+            self._append_agent("D'accord, je ferme AgentLocal.")
+            self.root.after(80, self.close)
+            return
+
         self.command_var.set("")
         self._append_user(command)
         self._set_busy(True)
@@ -341,6 +353,11 @@ class AgentLocalGUI:
             )
             if not should_close:
                 return
+        try:
+            if hasattr(agent, "clear_session_context"):
+                agent.clear_session_context()
+        except Exception:
+            pass
         self.root.destroy()
 
 

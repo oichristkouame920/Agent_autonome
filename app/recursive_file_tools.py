@@ -853,6 +853,58 @@ def find_filesystem_item(name, root_name=None, item_type="any", explicit_user_co
     return True, "\n".join(lines)
 
 
+def get_unique_reference_for_context(name, root_name=None, item_type="any"):
+    """Résout une référence unique sans lire son contenu.
+
+    Cette fonction est destinée aux actions déjà validées par AgentLocal
+    (mémoire de session / copie contrôlée de chemin). Elle ne choisit jamais
+    entre plusieurs résultats.
+    """
+    item_type = str(item_type or "any").strip().lower()
+    if item_type not in {"any", "file", "dir"}:
+        return False, "Type de référence invalide."
+
+    if root_name is not None:
+        root_name = str(root_name).strip().lower()
+        root, error = _root_path(root_name)
+        if root is None:
+            return False, error
+
+    if item_type == "file":
+        success, error, matches, limited, _ = _search_file_reference(name, root_name=root_name)
+    else:
+        success, error, matches, limited = _search_exact(name, root_name, item_type)
+        if success and not matches and item_type == "any":
+            success, error, matches, limited, _ = _search_file_reference(name, root_name=root_name)
+
+    if not success:
+        return False, error
+    if not matches:
+        suffix = " La limite de recherche a été atteinte." if limited else ""
+        return False, f"Aucune référence unique correspondant à '{name}' n'a été trouvée.{suffix}"
+    if len(matches) != 1:
+        locations = ", ".join(relative_display(root, path) for root, path in matches[:10])
+        return False, (
+            f"Plusieurs éléments correspondent à '{name}' : {locations}. "
+            "Précise la racine ou le chemin."
+        )
+
+    root_name_found, path = matches[0]
+    root_path, error = _root_path(root_name_found)
+    if root_path is None:
+        return False, error
+    try:
+        relative_path = str(path.resolve(strict=True).relative_to(root_path.resolve(strict=True)))
+    except (OSError, RuntimeError, ValueError):
+        return False, "Impossible de vérifier la référence trouvée."
+
+    return True, {
+        "root_name": root_name_found,
+        "relative_path": relative_path,
+        "item_type": "dir" if path.is_dir() else "file",
+    }
+
+
 def _unique_directory_candidate(directory_name, root_name=None):
     success, error, matches, limited = _search_exact(directory_name, root_name, "dir")
     if not success:
