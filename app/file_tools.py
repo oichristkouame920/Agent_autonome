@@ -176,6 +176,24 @@ HARD_MAX_CREATE_FILE_CONTENT_BYTES = 1024 * 1024
 
 
 # ============================================================
+# MODIFICATION DE FICHIERS TEXTE SUPPORTES EN DUR
+# ============================================================
+
+HARD_MODIFIABLE_TEXT_EXTENSIONS = set(
+    HARD_WRITABLE_TEXT_EXTENSIONS
+)
+
+HARD_APPEND_SAFE_EXTENSIONS = {
+    ".txt", ".md", ".csv", ".tsv", ".log",
+}
+
+HARD_MAX_MODIFY_EXISTING_BYTES = 1024 * 1024
+HARD_MAX_MODIFY_ADDED_BYTES = 256 * 1024
+HARD_MAX_MODIFY_RESULT_BYTES = 1024 * 1024
+
+
+
+# ============================================================
 # CORBEILLE WINDOWS
 # ============================================================
 
@@ -554,6 +572,26 @@ def get_create_file_policy():
         get_filesystem_config()
         .get(
             "create_file_policy",
+            {}
+        )
+    )
+
+    if not isinstance(
+        policy,
+        dict
+    ):
+
+        return {}
+
+    return policy
+
+
+def get_modify_file_policy():
+
+    policy = (
+        get_filesystem_config()
+        .get(
+            "modify_file_policy",
             {}
         )
     )
@@ -3962,6 +4000,365 @@ def copy_file_between_roots(
 
 
 # ============================================================
+# RECHERCHE CONTROLEE POUR RENOMMAGE SANS RACINE
+# ============================================================
+
+def find_rename_candidates(
+    file_name
+):
+    """
+    Recherche un nom de fichier uniquement dans les six
+    racines utilisateur autorisées.
+
+    Règles :
+    - nom simple uniquement ;
+    - enfant direct de la racine ;
+    - fichier normal uniquement ;
+    - aucune traversée de chemin ;
+    - aucun lien / junction / reparse point ;
+    - aucun fichier caché ou système ;
+    - uniquement dans une racine où le renommage est autorisé.
+
+    Retourne une liste de tuples :
+        (root_name, full_path)
+    """
+
+    if not is_filesystem_enabled():
+        return []
+
+    if not has_filesystem_permission(
+        "can_rename"
+    ):
+        return []
+
+    valid, validated_file = (
+        validate_file_name(
+            file_name
+        )
+    )
+
+    if not valid:
+        return []
+
+    policy = get_rename_policy()
+
+    if not policy.get(
+        "enabled",
+        False
+    ):
+        return []
+
+    if not policy.get(
+        "allow_auto_root_discovery",
+        False
+    ):
+        return []
+
+    # Barrière dure : même si le JSON est modifié, la recherche
+    # ne peut jamais sortir de ces six racines.
+    hard_allowed_roots = (
+        "desktop",
+        "documents",
+        "downloads",
+        "pictures",
+        "videos",
+        "music",
+    )
+
+    configured_roots = policy.get(
+        "auto_root_discovery_roots",
+        list(hard_allowed_roots)
+    )
+
+    if not isinstance(
+        configured_roots,
+        list
+    ):
+        configured_roots = list(
+            hard_allowed_roots
+        )
+
+    search_roots = [
+        root
+        for root in hard_allowed_roots
+        if root in configured_roots
+    ]
+
+    matches = []
+
+    for root_name in search_roots:
+
+        if not has_root_permission(
+            root_name,
+            "can_rename"
+        ):
+            continue
+
+        root_path = resolve_allowed_root(
+            root_name
+        )
+
+        if root_path is None:
+            continue
+
+        if not root_path.exists():
+            continue
+
+        candidate = (
+            root_path
+            /
+            validated_file
+        )
+
+        if not is_direct_child(
+            root_path,
+            candidate
+        ):
+            continue
+
+        try:
+            if not candidate.exists():
+                continue
+
+            if not candidate.is_file():
+                continue
+
+        except OSError:
+            continue
+
+        if is_hard_protected_path(
+            candidate
+        ):
+            continue
+
+        if is_reparse_point(
+            candidate
+        ):
+            continue
+
+        if is_hidden_or_system(
+            candidate
+        ):
+            continue
+
+        try:
+            resolved_root = root_path.resolve(
+                strict=True
+            )
+
+            resolved_candidate = candidate.resolve(
+                strict=True
+            )
+
+        except (
+            OSError,
+            RuntimeError,
+        ):
+            continue
+
+        if (
+            resolved_candidate.parent
+            !=
+            resolved_root
+        ):
+            continue
+
+        matches.append(
+            (
+                root_name,
+                resolved_candidate
+            )
+        )
+
+    return matches
+
+
+def rename_file_auto(
+    old_name,
+    new_name,
+    explicit_user_command=False
+):
+    """
+    Renommage avec recherche automatique de la racine.
+
+    La racine peut être omise par l'utilisateur. AgentLocal
+    recherche alors le fichier uniquement dans les six dossiers
+    utilisateur autorisés.
+
+    - 0 correspondance : refus ;
+    - 1 correspondance : renommage dans cette racine ;
+    - 2+ correspondances : refus et demande de préciser la racine.
+    """
+
+    if not is_filesystem_enabled():
+        return (
+            False,
+            (
+                "L'accès au système de fichiers "
+                "est désactivé."
+            )
+        )
+
+    if not has_filesystem_permission(
+        "can_rename"
+    ):
+        return (
+            False,
+            "Le renommage de fichiers est désactivé."
+        )
+
+    policy = get_rename_policy()
+
+    if not policy.get(
+        "enabled",
+        False
+    ):
+        return (
+            False,
+            "La politique de renommage est désactivée."
+        )
+
+    if not policy.get(
+        "allow_auto_root_discovery",
+        False
+    ):
+        return (
+            False,
+            (
+                "La recherche automatique de l'emplacement "
+                "du fichier est désactivée."
+            )
+        )
+
+    if (
+        policy.get(
+            "require_explicit_user_command",
+            True
+        )
+        and
+        not explicit_user_command
+    ):
+        return (
+            False,
+            (
+                "Le renommage nécessite une commande "
+                "explicite de l'utilisateur."
+            )
+        )
+
+    # La politique doit rester stricte : une seule correspondance
+    # est nécessaire pour agir automatiquement.
+    if policy.get(
+        "maximum_auto_root_matches",
+        1
+    ) != 1:
+        return (
+            False,
+            (
+                "La politique de recherche automatique n'est "
+                "pas assez restrictive."
+            )
+        )
+
+    valid, validated_old_name = (
+        validate_file_name(
+            old_name
+        )
+    )
+
+    if not valid:
+        return (
+            False,
+            validated_old_name
+        )
+
+    valid, validated_new_name = (
+        validate_file_name(
+            new_name
+        )
+    )
+
+    if not valid:
+        return (
+            False,
+            validated_new_name
+        )
+
+    if (
+        validated_old_name.casefold()
+        ==
+        validated_new_name.casefold()
+    ):
+        return (
+            False,
+            (
+                "L'ancien et le nouveau nom sont identiques "
+                "ou ne diffèrent que par la casse."
+            )
+        )
+
+    if not policy.get(
+        "allow_extension_change",
+        False
+    ):
+        if (
+            get_extension_chain(
+                validated_old_name
+            )
+            !=
+            get_extension_chain(
+                validated_new_name
+            )
+        ):
+            return (
+                False,
+                "Le changement d'extension est interdit."
+            )
+
+    matches = find_rename_candidates(
+        validated_old_name
+    )
+
+    if not matches:
+        return (
+            False,
+            (
+                f"Le fichier '{validated_old_name}' n'a pas été trouvé "
+                "directement dans Bureau, Documents, Téléchargements, "
+                "Images, Vidéos ou Musique."
+            )
+        )
+
+    if len(matches) > 1:
+        locations = ", ".join(
+            DISPLAY_NAMES.get(
+                root_name,
+                root_name
+            )
+            for root_name, _ in matches
+        )
+
+        return (
+            False,
+            (
+                f"Plusieurs fichiers nommés '{validated_old_name}' "
+                f"ont été trouvés : {locations}. "
+                "Précise le dossier pour éviter de renommer "
+                "le mauvais fichier."
+            )
+        )
+
+    resolved_root, _ = matches[0]
+
+    return rename_file(
+        resolved_root,
+        validated_old_name,
+        validated_new_name,
+        explicit_user_command=True
+    )
+
+
+# ============================================================
 # RENOMMAGE ULTRA CONTROLE
 # ============================================================
 
@@ -4392,48 +4789,6 @@ def rename_file(
                 "à une zone protégée."
             )
         )
-
-    # ========================================================
-    # COPIE CONTROLEE
-    # ========================================================
-
-    copy_policy = (
-        get_copy_policy()
-    )
-
-    print(
-        "Copie contrôlée :"
-    )
-
-    print(
-        (
-            "- Permission globale : "
-            f"{has_filesystem_permission('can_copy')}"
-        )
-    )
-
-    print(
-        (
-            "- Politique active : "
-            f"{copy_policy.get('enabled', False)}"
-        )
-    )
-
-    print(
-        (
-            "- Écrasement : "
-            f"{copy_policy.get('allow_overwrite', False)}"
-        )
-    )
-
-    print(
-        (
-            "- Maximum fichiers par commande : "
-            f"{copy_policy.get('maximum_items_per_command', 0)}"
-        )
-    )
-
-    print()
 
     # ========================================================
     # RENOMMAGE
@@ -8178,6 +8533,1080 @@ def create_file_with_content(
     )
 
 
+
+# ============================================================
+# MODIFIER UN FICHIER TEXTE EXISTANT DE FAÇON CONTROLEE
+# ============================================================
+
+def get_allowed_modify_file_extensions():
+    """
+    Intersection entre permissions.json et la liste dure.
+
+    Même si la configuration est élargie par erreur, AgentLocal
+    ne modifie que les formats textuels explicitement supportés.
+    """
+
+    policy = get_modify_file_policy()
+
+    configured = policy.get(
+        "allowed_extensions",
+        []
+    )
+
+    if not isinstance(
+        configured,
+        list
+    ):
+        return set()
+
+    normalized = set()
+
+    for extension in configured:
+
+        if not isinstance(
+            extension,
+            str
+        ):
+            continue
+
+        extension = (
+            extension
+            .strip()
+            .lower()
+        )
+
+        if not extension:
+            continue
+
+        if not extension.startswith("."):
+            extension = "." + extension
+
+        if extension in get_blocked_extensions():
+            continue
+
+        normalized.add(
+            extension
+        )
+
+    return (
+        normalized
+        &
+        HARD_MODIFIABLE_TEXT_EXTENSIONS
+    )
+
+
+def get_append_safe_modify_extensions():
+    policy = get_modify_file_policy()
+
+    configured = policy.get(
+        "append_safe_extensions",
+        []
+    )
+
+    if not isinstance(
+        configured,
+        list
+    ):
+        return set()
+
+    normalized = set()
+
+    for extension in configured:
+
+        if not isinstance(
+            extension,
+            str
+        ):
+            continue
+
+        extension = (
+            extension
+            .strip()
+            .lower()
+        )
+
+        if not extension:
+            continue
+
+        if not extension.startswith("."):
+            extension = "." + extension
+
+        normalized.add(
+            extension
+        )
+
+    return (
+        normalized
+        &
+        HARD_APPEND_SAFE_EXTENSIONS
+        &
+        get_allowed_modify_file_extensions()
+    )
+
+
+def get_allowed_modify_encodings():
+    policy = get_modify_file_policy()
+
+    configured = policy.get(
+        "allowed_encodings",
+        []
+    )
+
+    if not isinstance(
+        configured,
+        list
+    ):
+        return []
+
+    allowed = []
+
+    for encoding in configured:
+
+        if not isinstance(
+            encoding,
+            str
+        ):
+            continue
+
+        encoding = (
+            encoding
+            .strip()
+            .lower()
+        )
+
+        if encoding not in {
+            "utf-8",
+            "utf-8-sig",
+            "cp1252",
+        }:
+            continue
+
+        if encoding not in allowed:
+            allowed.append(
+                encoding
+            )
+
+    return allowed
+
+
+def decode_text_bytes_for_modification(
+    data
+):
+    """
+    Décode le texte en conservant autant que possible l'encodage
+    réellement utilisé par le fichier.
+    """
+
+    if not isinstance(
+        data,
+        (bytes, bytearray)
+    ):
+        return (
+            False,
+            "Contenu de fichier invalide.",
+            None
+        )
+
+    encodings = get_allowed_modify_encodings()
+
+    if not encodings:
+        return (
+            False,
+            "Aucun encodage autorisé pour la modification.",
+            None
+        )
+
+    # BOM UTF-8 : il doit rester présent après modification.
+    if (
+        data.startswith(b"\xef\xbb\xbf")
+        and
+        "utf-8-sig" in encodings
+    ):
+        try:
+            return (
+                True,
+                data.decode(
+                    "utf-8-sig",
+                    errors="strict"
+                ),
+                "utf-8-sig"
+            )
+        except UnicodeDecodeError:
+            return (
+                False,
+                "Le fichier possède un BOM UTF-8 invalide.",
+                None
+            )
+
+    for encoding in (
+        "utf-8",
+        "cp1252",
+    ):
+
+        if encoding not in encodings:
+            continue
+
+        try:
+            return (
+                True,
+                data.decode(
+                    encoding,
+                    errors="strict"
+                ),
+                encoding
+            )
+        except UnicodeDecodeError:
+            continue
+
+    return (
+        False,
+        (
+            "Le fichier n'utilise aucun des encodages "
+            "autorisés pour la modification."
+        ),
+        None
+    )
+
+
+def get_file_fingerprint(
+    path
+):
+    """
+    Empreinte légère permettant de détecter un changement du fichier
+    entre la lecture et l'écriture atomique.
+    """
+
+    try:
+        stats = os.stat(
+            path,
+            follow_symlinks=False
+        )
+
+        return (
+            int(stats.st_size),
+            int(getattr(stats, "st_mtime_ns", 0)),
+            int(getattr(stats, "st_ino", 0)),
+        )
+
+    except OSError:
+        return None
+
+
+def write_existing_file_atomically(
+    source_path,
+    encoded_content,
+    expected_fingerprint
+):
+    """
+    Écrit d'abord dans un fichier temporaire du même dossier puis
+    remplace atomiquement le fichier d'origine avec os.replace().
+
+    Aucun fichier temporaire n'est laissé volontairement en place.
+    """
+
+    source_path = Path(
+        source_path
+    )
+
+    temp_path = (
+        source_path.parent
+        /
+        (
+            ".agentlocal_tmp_"
+            + uuid.uuid4().hex
+            + ".tmp"
+        )
+    )
+
+    fd = None
+
+    try:
+        fd = os.open(
+            str(temp_path),
+            (
+                os.O_WRONLY
+                |
+                os.O_CREAT
+                |
+                os.O_EXCL
+            ),
+            0o600
+        )
+
+        with os.fdopen(
+            fd,
+            "wb"
+        ) as file:
+            fd = None
+            file.write(
+                encoded_content
+            )
+            file.flush()
+            os.fsync(
+                file.fileno()
+            )
+
+        # Revalidation juste avant le remplacement.
+        if not source_path.exists():
+            return (
+                False,
+                "Le fichier source a disparu pendant la modification."
+            )
+
+        if not source_path.is_file():
+            return (
+                False,
+                "La source n'est plus un fichier normal."
+            )
+
+        if is_reparse_point(
+            source_path
+        ):
+            return (
+                False,
+                "Le fichier source est devenu un reparse point."
+            )
+
+        if is_hidden_or_system(
+            source_path
+        ):
+            return (
+                False,
+                "Le fichier source est devenu caché ou système."
+            )
+
+        current_fingerprint = get_file_fingerprint(
+            source_path
+        )
+
+        if (
+            expected_fingerprint is None
+            or
+            current_fingerprint != expected_fingerprint
+        ):
+            return (
+                False,
+                (
+                    "Le fichier a changé depuis sa lecture. "
+                    "La modification est annulée pour éviter d'écraser "
+                    "une modification concurrente."
+                )
+            )
+
+        os.replace(
+            temp_path,
+            source_path
+        )
+
+        temp_path = None
+
+        return (
+            True,
+            None
+        )
+
+    except FileExistsError:
+        return (
+            False,
+            "Un fichier temporaire inattendu existe déjà."
+        )
+
+    except (
+        OSError,
+        PermissionError,
+    ) as error:
+        return (
+            False,
+            (
+                "Impossible d'enregistrer atomiquement le fichier : "
+                f"{error}"
+            )
+        )
+
+    finally:
+        if fd is not None:
+            try:
+                os.close(
+                    fd
+                )
+            except OSError:
+                pass
+
+        if temp_path is not None:
+            try:
+                Path(temp_path).unlink(
+                    missing_ok=True
+                )
+            except OSError:
+                pass
+
+
+def modify_file_content(
+    root_name,
+    file_name,
+    content,
+    mode,
+    explicit_user_command=False,
+    source="unspecified"
+):
+    """
+    Modifie UN fichier texte existant.
+
+    Modes fermés :
+    - replace_content : remplace tout le contenu ;
+    - append_content  : ajoute exactement le contenu à la fin ;
+    - append_line     : ajoute une seule nouvelle ligne.
+
+    La modification est limitée aux commandes manuelles explicites.
+    """
+
+    root_name = (
+        str(root_name)
+        .strip()
+        .lower()
+    )
+
+    source = (
+        str(source)
+        .strip()
+        .lower()
+    )
+
+    mode = (
+        str(mode)
+        .strip()
+        .lower()
+    )
+
+    if not is_filesystem_enabled():
+        return (
+            False,
+            "L'accès au système de fichiers est désactivé."
+        )
+
+    if not has_filesystem_permission(
+        "can_write_content"
+    ):
+        return (
+            False,
+            "L'écriture de contenu est désactivée."
+        )
+
+    if not has_filesystem_permission(
+        "can_modify_content"
+    ):
+        return (
+            False,
+            "La modification de fichiers existants est désactivée."
+        )
+
+    if not has_root_permission(
+        root_name,
+        "can_modify_file"
+    ):
+        return (
+            False,
+            (
+                "La modification de fichiers n'est pas autorisée dans "
+                f"{DISPLAY_NAMES.get(root_name, root_name)}."
+            )
+        )
+
+    policy = get_modify_file_policy()
+
+    if not policy.get(
+        "enabled",
+        False
+    ):
+        return (
+            False,
+            "La politique de modification de fichiers est désactivée."
+        )
+
+    if source != "manual":
+        return (
+            False,
+            (
+                "La modification de fichiers est limitée aux commandes "
+                "manuelles explicites."
+            )
+        )
+
+    if policy.get(
+        "allow_from_routine",
+        False
+    ):
+        return (
+            False,
+            "Configuration dangereuse détectée pour les routines."
+        )
+
+    if policy.get(
+        "allow_from_habit",
+        False
+    ):
+        return (
+            False,
+            "Configuration dangereuse détectée pour les habitudes."
+        )
+
+    if policy.get(
+        "allow_automatic_write",
+        False
+    ):
+        return (
+            False,
+            "La modification automatique reste interdite."
+        )
+
+    if (
+        policy.get(
+            "require_explicit_user_command",
+            True
+        )
+        and
+        not explicit_user_command
+    ):
+        return (
+            False,
+            (
+                "La modification du fichier nécessite une commande "
+                "explicite de l'utilisateur."
+            )
+        )
+
+    if policy.get(
+        "maximum_items_per_command",
+        1
+    ) != 1:
+        return (
+            False,
+            (
+                "La politique de modification n'est pas assez restrictive : "
+                "un seul fichier doit être autorisé."
+            )
+        )
+
+    allowed_modes = policy.get(
+        "allowed_modes",
+        []
+    )
+
+    if not isinstance(
+        allowed_modes,
+        list
+    ):
+        return (
+            False,
+            "La liste des modes de modification est invalide."
+        )
+
+    allowed_modes = {
+        str(item).strip().lower()
+        for item in allowed_modes
+        if isinstance(item, str)
+    }
+
+    hard_modes = {
+        "replace_content",
+        "append_content",
+        "append_line",
+    }
+
+    if (
+        mode not in hard_modes
+        or
+        mode not in allowed_modes
+    ):
+        return (
+            False,
+            "Mode de modification interdit ou inconnu."
+        )
+
+    if policy.get(
+        "allow_create_if_missing",
+        False
+    ):
+        return (
+            False,
+            (
+                "Configuration dangereuse détectée : la modification "
+                "ne doit jamais créer automatiquement un fichier manquant."
+            )
+        )
+
+    if not policy.get(
+        "atomic_replace_required",
+        True
+    ):
+        return (
+            False,
+            "L'écriture atomique est obligatoire."
+        )
+
+    if not policy.get(
+        "verify_source_unchanged_before_commit",
+        True
+    ):
+        return (
+            False,
+            "La vérification anti-écrasement concurrent est obligatoire."
+        )
+
+    valid, validated_file = validate_file_name(
+        file_name
+    )
+
+    if not valid:
+        return (
+            False,
+            validated_file
+        )
+
+    extension = (
+        Path(validated_file)
+        .suffix
+        .lower()
+    )
+
+    if extension not in get_allowed_modify_file_extensions():
+        return (
+            False,
+            (
+                f"L'extension '{extension or '(aucune)'}' n'est pas "
+                "autorisée pour la modification."
+            )
+        )
+
+    if (
+        mode in {
+            "append_content",
+            "append_line",
+        }
+        and
+        extension not in get_append_safe_modify_extensions()
+    ):
+        return (
+            False,
+            (
+                "L'ajout à la fin est limité aux formats textuels "
+                "simples afin d'éviter de corrompre un format structuré."
+            )
+        )
+
+    if not isinstance(
+        content,
+        str
+    ):
+        return (
+            False,
+            "Le nouveau contenu est invalide."
+        )
+
+    if "\x00" in content:
+        return (
+            False,
+            "Le contenu binaire ou contenant un octet NUL est interdit."
+        )
+
+    if (
+        mode == "append_line"
+        and
+        ("\n" in content or "\r" in content)
+    ):
+        return (
+            False,
+            "Le mode 'ajoute une ligne' accepte une seule ligne de texte."
+        )
+
+    try:
+        content_utf8_bytes = content.encode(
+            "utf-8"
+        )
+    except UnicodeEncodeError:
+        return (
+            False,
+            "Le contenu demandé n'est pas un texte Unicode valide."
+        )
+
+    def validated_positive_limit(
+        key,
+        hard_maximum
+    ):
+        value = policy.get(
+            key,
+            0
+        )
+
+        try:
+            value = int(
+                value
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
+            return None
+
+        if (
+            value <= 0
+            or
+            value > hard_maximum
+        ):
+            return None
+
+        return value
+
+    maximum_existing = validated_positive_limit(
+        "maximum_existing_file_bytes",
+        HARD_MAX_MODIFY_EXISTING_BYTES
+    )
+
+    maximum_added = validated_positive_limit(
+        "maximum_added_content_bytes",
+        HARD_MAX_MODIFY_ADDED_BYTES
+    )
+
+    maximum_result = validated_positive_limit(
+        "maximum_result_bytes",
+        HARD_MAX_MODIFY_RESULT_BYTES
+    )
+
+    if (
+        maximum_existing is None
+        or
+        maximum_added is None
+        or
+        maximum_result is None
+    ):
+        return (
+            False,
+            "Une limite de taille de modification est invalide."
+        )
+
+    if len(content_utf8_bytes) > maximum_added:
+        return (
+            False,
+            (
+                "Le contenu demandé est trop volumineux. "
+                f"Limite d'ajout : {format_size(maximum_added)}."
+            )
+        )
+
+    root_path = resolve_allowed_root(
+        root_name
+    )
+
+    if root_path is None:
+        return (
+            False,
+            "Dossier racine protégé ou introuvable."
+        )
+
+    if (
+        not root_path.exists()
+        or
+        not root_path.is_dir()
+    ):
+        return (
+            False,
+            "La racine autorisée n'est pas disponible."
+        )
+
+    source_path = (
+        root_path
+        /
+        validated_file
+    )
+
+    if not is_direct_child(
+        root_path,
+        source_path
+    ):
+        return (
+            False,
+            "Le fichier doit se trouver directement dans la racine autorisée."
+        )
+
+    if is_hard_protected_path(
+        source_path
+    ):
+        return (
+            False,
+            "Le fichier appartient à une zone protégée."
+        )
+
+    if not os.path.lexists(
+        str(source_path)
+    ):
+        return (
+            False,
+            (
+                f"Le fichier '{validated_file}' n'existe pas dans "
+                f"{DISPLAY_NAMES.get(root_name, root_name)}."
+            )
+        )
+
+    if is_reparse_point(
+        source_path
+    ):
+        return (
+            False,
+            "Les liens, junctions et reparse points sont interdits."
+        )
+
+    if is_hidden_or_system(
+        source_path
+    ):
+        return (
+            False,
+            "Les fichiers cachés ou système sont protégés."
+        )
+
+    if not source_path.is_file():
+        return (
+            False,
+            "La source n'est pas un fichier normal autorisé."
+        )
+
+    try:
+        resolved_root = root_path.resolve(
+            strict=True
+        )
+
+        resolved_source = source_path.resolve(
+            strict=True
+        )
+
+    except (
+        OSError,
+        RuntimeError,
+    ):
+        return (
+            False,
+            "Impossible de vérifier le chemin du fichier."
+        )
+
+    if resolved_source.parent != resolved_root:
+        return (
+            False,
+            "Le fichier sort de la racine autorisée."
+        )
+
+    original_fingerprint = get_file_fingerprint(
+        source_path
+    )
+
+    if original_fingerprint is None:
+        return (
+            False,
+            "Impossible d'obtenir l'empreinte du fichier."
+        )
+
+    if original_fingerprint[0] > maximum_existing:
+        return (
+            False,
+            (
+                "Le fichier existant est trop volumineux pour être modifié. "
+                f"Limite : {format_size(maximum_existing)}."
+            )
+        )
+
+    try:
+        with open(
+            source_path,
+            "rb"
+        ) as file:
+            original_bytes = file.read(
+                maximum_existing + 1
+            )
+
+    except (
+        OSError,
+        PermissionError,
+    ) as error:
+        return (
+            False,
+            (
+                "Impossible de lire le fichier avant modification : "
+                f"{error}"
+            )
+        )
+
+    if len(original_bytes) > maximum_existing:
+        return (
+            False,
+            "Le fichier a dépassé la limite pendant sa lecture."
+        )
+
+    if looks_like_binary_data(
+        original_bytes
+    ):
+        return (
+            False,
+            "Le fichier ressemble à un contenu binaire non autorisé."
+        )
+
+    after_read_fingerprint = get_file_fingerprint(
+        source_path
+    )
+
+    if after_read_fingerprint != original_fingerprint:
+        return (
+            False,
+            (
+                "Le fichier a changé pendant sa lecture. "
+                "La modification est annulée."
+            )
+        )
+
+    ok, original_text, detected_encoding = (
+        decode_text_bytes_for_modification(
+            original_bytes
+        )
+    )
+
+    if not ok:
+        return (
+            False,
+            original_text
+        )
+
+    if mode == "replace_content":
+        result_text = content
+
+    elif mode == "append_content":
+        result_text = (
+            original_text
+            +
+            content
+        )
+
+    else:
+        if "\r\n" in original_text:
+            newline = "\r\n"
+        else:
+            newline = "\n"
+
+        if not original_text:
+            result_text = content
+        elif original_text.endswith(("\n", "\r")):
+            result_text = (
+                original_text
+                +
+                content
+            )
+        else:
+            result_text = (
+                original_text
+                +
+                newline
+                +
+                content
+            )
+
+    try:
+        result_bytes = result_text.encode(
+            detected_encoding,
+            errors="strict"
+        )
+    except UnicodeEncodeError:
+        return (
+            False,
+            (
+                "Le nouveau contenu ne peut pas être enregistré dans "
+                f"l'encodage existant '{detected_encoding}' sans perte."
+            )
+        )
+
+    if len(result_bytes) > maximum_result:
+        return (
+            False,
+            (
+                "Le résultat serait trop volumineux. "
+                f"Limite : {format_size(maximum_result)}."
+            )
+        )
+
+    success, error = write_existing_file_atomically(
+        source_path,
+        result_bytes,
+        original_fingerprint
+    )
+
+    if not success:
+        return (
+            False,
+            error
+        )
+
+    try:
+        if not source_path.exists():
+            return (
+                False,
+                "Le fichier n'est plus visible après la modification."
+            )
+
+        if not source_path.is_file():
+            return (
+                False,
+                "Le résultat n'est pas un fichier normal."
+            )
+
+        if is_reparse_point(
+            source_path
+        ):
+            return (
+                False,
+                "Un reparse point inattendu a été détecté après écriture."
+            )
+
+        if is_hidden_or_system(
+            source_path
+        ):
+            return (
+                False,
+                "Le fichier possède un attribut protégé inattendu."
+            )
+
+        stats = source_path.stat(
+            follow_symlinks=False
+        )
+
+        if stats.st_size != len(result_bytes):
+            return (
+                False,
+                (
+                    "La taille du fichier modifié ne correspond pas "
+                    "au résultat attendu."
+                )
+            )
+
+    except OSError as error:
+        return (
+            False,
+            (
+                "Le fichier a été modifié mais sa vérification a échoué : "
+                f"{error}"
+            )
+        )
+
+    mode_labels = {
+        "replace_content": "contenu remplacé",
+        "append_content": "contenu ajouté",
+        "append_line": "ligne ajoutée",
+    }
+
+    return (
+        True,
+        (
+            f"Le fichier '{validated_file}' dans "
+            f"{DISPLAY_NAMES.get(root_name, root_name)} a été modifié "
+            f"({mode_labels[mode]})."
+        )
+    )
+
+
 # ============================================================
 # TEST DIRECT
 # ============================================================
@@ -8525,10 +9954,52 @@ if __name__ == "__main__":
 
     print()
 
+    # ========================================================
+    # MODIFICATION DE FICHIER CONTROLEE
+    # ========================================================
+
+    modify_file_policy = (
+        get_modify_file_policy()
+    )
+
+    print(
+        "Modification de fichier contrôlée :"
+    )
+
+    print(
+        (
+            "- Permission globale : "
+            f"{has_filesystem_permission('can_modify_content')}"
+        )
+    )
+
+    print(
+        (
+            "- Politique active : "
+            f"{modify_file_policy.get('enabled', False)}"
+        )
+    )
+
+    print(
+        (
+            "- Extensions modifiables : "
+            f"{', '.join(sorted(get_allowed_modify_file_extensions())) or 'aucune'}"
+        )
+    )
+
+    print(
+        (
+            "- Extensions autorisées pour ajout : "
+            f"{', '.join(sorted(get_append_safe_modify_extensions())) or 'aucune'}"
+        )
+    )
+
+    print()
+
     print(
         (
             "Aucun fichier n'a été créé, lu, exécuté, "
-            "déplacé, copié, renommé ou supprimé pendant ce test."
+            "déplacé, copié, renommé, modifié ou supprimé pendant ce test."
         )
     )
 

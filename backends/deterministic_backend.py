@@ -175,6 +175,8 @@ FILE_ROOT_ALIASES = {
     "document": "documents",
     "documents": "documents",
     "mes documents": "documents",
+    "docuement": "documents",
+    "docuements": "documents",
 
     # Téléchargements
     "telechargement": "downloads",
@@ -260,6 +262,7 @@ MASS_DELETE_TERMS = {
 
 MASS_READ_TERMS = set(MASS_DELETE_TERMS)
 MASS_COPY_TERMS = set(MASS_DELETE_TERMS)
+MASS_MODIFY_TERMS = set(MASS_DELETE_TERMS)
 
 
 WRITABLE_TEXT_EXTENSIONS = {
@@ -267,6 +270,10 @@ WRITABLE_TEXT_EXTENSIONS = {
     ".xml", ".yaml", ".yml", ".log", ".ini",
     ".cfg", ".conf", ".toml", ".ics", ".vcf",
     ".html", ".htm", ".rtf", ".eml",
+}
+
+APPEND_SAFE_TEXT_EXTENSIONS = {
+    ".txt", ".md", ".csv", ".tsv", ".log",
 }
 
 
@@ -525,6 +532,200 @@ def normalize_text(
     )
 
     return text.strip()
+
+
+# ============================================================
+# LANGAGE NATUREL CONTROLE
+# ============================================================
+
+def _has_literal_content_payload(text):
+    """
+    Detecte les commandes dont une partie de la phrase est du contenu
+    utilisateur a conserver exactement. Dans ce cas, les transformations
+    de fin de phrase sont volontairement desactivees.
+    """
+
+    normalized = normalize_text(text)
+    markers = (
+        " avec le contenu ",
+        " contenant ",
+        " remplace le contenu ",
+        " remplacer le contenu ",
+        " ajoute une ligne ",
+        " ajouter une ligne ",
+        " ajoute au fichier ",
+        " ajouter au fichier ",
+        " ajoute a fichier ",
+        " ajouter a fichier ",
+    )
+    padded = f" {normalized} "
+    return any(marker in padded for marker in markers)
+
+
+def _strip_natural_leading_wrappers(text):
+    """Retire uniquement des amorces conversationnelles sans toucher au sens."""
+
+    value = str(text or "").strip().replace("’", "'")
+    patterns = (
+        r"^(?:bonjour|salut|coucou|hello)\s*[,;:!-]?\s+",
+        r"^(?:s'il\s+te\s+pla[iî]t|s'il\s+vous\s+pla[iî]t|stp|svp)\s*[,;:!-]?\s+",
+        r"^(?:est[- ]ce\s+que\s+tu\s+(?:peux|pourrais)|est[- ]ce\s+que\s+vous\s+(?:pouvez|pourriez))\s+",
+        r"^(?:tu\s+(?:peux|pourrais)|vous\s+(?:pouvez|pourriez)|peux[- ]tu|pourrais[- ]tu|pouvez[- ]vous|pourriez[- ]vous)\s+",
+        r"^(?:j'aimerais|j'aimerai|je\s+voudrais|je\s+veux|j'aurais\s+besoin|j'ai\s+besoin)\s+(?:que\s+(?:tu|vous)\s+)?",
+        r"^(?:merci\s+de|veuillez|je\s+te\s+demande\s+de|je\s+vous\s+demande\s+de)\s+",
+        r"^(?:ok|d'accord|bon|alors)\s*[,;:!-]\s+",
+    )
+
+    for _ in range(4):
+        previous = value
+        for pattern in patterns:
+            candidate = re.sub(pattern, "", value, count=1, flags=re.IGNORECASE).strip()
+            if candidate != value:
+                value = candidate
+                break
+        if value == previous:
+            break
+
+    return value
+
+
+def _rewrite_natural_command_start(text):
+    """
+    Convertit un petit vocabulaire conversationnel vers les verbes deja
+    autorises. Aucune nouvelle capacite n'est creee ici.
+    """
+
+    value = str(text or "").strip().replace("’", "'")
+
+    command_verbs = (
+        r"ouvre|ouvrir|ouvres|lance|lancer|lances|demarre|demarrer|demarres|"
+        r"d[ée]marre|d[ée]marrer|d[ée]marres|ferme|fermer|fermes|quitte|quitter|"
+        r"cherche|chercher|cherches|trouve|trouver|trouves|retrouve|retrouver|retrouves|"
+        r"localise|localiser|localises|liste|lister|listes|affiche|afficher|affiches|"
+        r"montre|montrer|montres|lis|lire|lises|cr[ée]e|cr[ée]er|cr[ée]es|"
+        r"copie|copier|copies|duplique|dupliquer|dupliques|d[ée]place|d[ée]placer|d[ée]places|"
+        r"range|ranger|ranges|renomme|renommer|renommes|supprime|supprimer|supprimes|"
+        r"efface|effacer|effaces|verifie|verifier|verifies|v[ée]rifie|v[ée]rifier|v[ée]rifies|"
+        r"accede|acceder|accedes|acc[èe]de|acc[èe]der|acc[èe]des|va|aller|vas"
+    )
+
+    value = re.sub(
+        rf"^(?:m'|me\s+)(?=(?:{command_verbs})\b)",
+        "",
+        value,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(
+        rf"^((?:{command_verbs}))(?:-moi|\s+moi)\b",
+        r"\1",
+        value,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+
+    conjugation_rules = (
+        (r"^ouvres\b", "ouvre"),
+        (r"^lances\b", "lance"),
+        (r"^(?:demarres|d[ée]marres)\b", "demarre"),
+        (r"^fermes\b", "ferme"),
+        (r"^cherches\b", "cherche"),
+        (r"^trouves\b", "trouve"),
+        (r"^affiches\b", "affiche"),
+        (r"^montres\b", "montre"),
+        (r"^listes\b", "liste"),
+        (r"^lises\b", "lis"),
+        (r"^cr[ée]es\b", "cree"),
+        (r"^copies\b", "copie"),
+        (r"^d[ée]places\b", "deplace"),
+        (r"^renommes\b", "renomme"),
+        (r"^supprimes\b", "supprime"),
+        (r"^(?:verifier|v[ée]rifier|verifies|v[ée]rifies)\b", "verifie"),
+        (r"^(?:acceder|acc[èeé]der|accedes|acc[èeé]des)\b", "accede"),
+        (r"^ailles\s+sur\b", "va sur"),
+        (r"^(?:préparer|preparer|prépares|prepares)\b", "prépare"),
+    )
+    for pattern, replacement in conjugation_rules:
+        candidate = re.sub(pattern, replacement, value, count=1, flags=re.IGNORECASE)
+        if candidate != value:
+            value = candidate
+            break
+
+    synonym_rules = (
+        (r"^(?:retrouve|retrouver|retrouves)\b", "trouve"),
+        (r"^(?:localise|localiser|localises)\b", "trouve"),
+        (r"^(?:efface|effacer|effaces)\b", "supprime"),
+        (r"^(?:duplique|dupliquer|dupliques)\b", "copie"),
+        (r"^(?:range|ranger|ranges)\b", "deplace"),
+        (r"^(?:consulte|consulter|consultes)\s+le\s+contenu\b", "affiche le contenu"),
+        (r"^(?:donne|donner|donnes)(?:-moi|\s+moi)?\s+le\s+contenu\s+(?:de|du)\s+(?:(?:le|la)\s+)?fichier\b", "lis le fichier"),
+        (r"^(?:donne|donner|donnes)(?:-moi|\s+moi)?\s+le\s+contenu\b", "affiche le contenu"),
+        (r"^ou\s+se\s+trouve\b", "ou est"),
+        (r"^o[uù]\s+se\s+trouve\b", "ou est"),
+        (r"^qu['’]?est[- ]ce\s+qu['’]?il\s+y\s+a\s+dans\b", "liste"),
+        (r"^(?:montre|montrer)(?:-moi|\s+moi)?\s+ce\s+qu['’]?il\s+y\s+a\s+dans\b", "liste"),
+        (r"^(?:affiche|afficher)(?:-moi|\s+moi)?\s+ce\s+qu['’]?il\s+y\s+a\s+dans\b", "liste"),
+        (r"^lancer\s+ma\s+routine\s+de\s+travail\b", "lance ma routine de travail"),
+    )
+    for pattern, replacement in synonym_rules:
+        candidate = re.sub(pattern, replacement, value, count=1, flags=re.IGNORECASE)
+        if candidate != value:
+            value = candidate
+            break
+
+    return value.strip()
+
+
+def build_natural_command_variants(user_message):
+    """
+    Produit des variantes plus naturelles, mais uniquement comme secours
+    apres l'interpretation stricte. L'original reste toujours prioritaire.
+    """
+
+    original = str(user_message or "").strip()
+    if not original:
+        return []
+
+    candidates = []
+
+    def add(value):
+        value = str(value or "").strip()
+        if value and value != original and value not in candidates:
+            candidates.append(value)
+
+    direct_question = re.sub(
+        r"^(?:(?:est[- ]ce\s+que\s+)?tu\s+(?:peux|pourrais)|peux[- ]tu|pourrais[- ]tu)\s+me\s+dire\s+o[uù]\s+(?:se\s+trouve|est)\s+",
+        "trouve ",
+        original.replace("’", "'"),
+        count=1,
+        flags=re.IGNORECASE,
+    )
+    if not _has_literal_content_payload(direct_question):
+        direct_question = re.sub(
+            r"\s*[,;:-]?\s*(?:s'il\s+te\s+pla[iî]t|s'il\s+vous\s+pla[iî]t|stp|svp|merci)\s*[.!?]*\s*$",
+            "",
+            direct_question,
+            count=1,
+            flags=re.IGNORECASE,
+        ).strip()
+        direct_question = direct_question.rstrip(" .!?").strip()
+    add(direct_question)
+
+    value = _strip_natural_leading_wrappers(original)
+    value = _rewrite_natural_command_start(value)
+
+    if not _has_literal_content_payload(value):
+        value = re.sub(
+            r"\s*[,;:-]?\s*(?:s'il\s+te\s+pla[iî]t|s'il\s+vous\s+pla[iî]t|stp|svp|merci)\s*[.!?]*\s*$",
+            "",
+            value,
+            count=1,
+            flags=re.IGNORECASE,
+        ).strip()
+        value = value.rstrip(" .!?").strip()
+
+    add(value)
+    return candidates
 
 
 # ============================================================
@@ -1532,7 +1733,7 @@ def parse_create_folder(
 
     root_pattern = (
         r"bureau|desktop|"
-        r"documents?|"
+        r"documents?|docuements?|"
         r"téléchargements?|telechargements?|downloads?|"
         r"images?|photos?|pictures?|"
         r"vidéos?|videos?|"
@@ -2081,7 +2282,11 @@ def parse_rename_file(
         r"musiques?|music"
     )
 
-    pattern = (
+    # ========================================================
+    # FORME AVEC RACINE EXPLICITE
+    # ========================================================
+
+    pattern_with_root = (
         r"^\s*"
         r"(?:renomme|renommer)"
         r"\s+"
@@ -2098,13 +2303,97 @@ def parse_rename_file(
     )
 
     match = re.fullmatch(
-        pattern,
+        pattern_with_root,
+        user_message,
+        flags=re.IGNORECASE
+    )
+
+    if match:
+
+        old_name = (
+            match
+            .group(1)
+            .strip()
+        )
+
+        new_name = (
+            match
+            .group(2)
+            .strip()
+        )
+
+        root_name = (
+            normalize_file_root(
+                match.group(3)
+            )
+        )
+
+        if not root_name:
+            return []
+
+        if not is_safe_simple_file_name(
+            old_name
+        ):
+            return []
+
+        if not is_safe_simple_file_name(
+            new_name
+        ):
+            return []
+
+        if (
+            old_name.casefold()
+            ==
+            new_name.casefold()
+        ):
+            return []
+
+        old_extension = get_extension_chain(old_name)
+        new_extension = get_extension_chain(new_name)
+        if old_extension and new_extension and old_extension != new_extension:
+            return []
+
+        return [
+            make_action(
+                "rename_file",
+                root_name,
+                {
+                    "old_name": old_name,
+                    "new_name": new_name,
+                }
+            )
+        ]
+
+    # ========================================================
+    # FORME SANS RACINE
+    #
+    # Exemple :
+    #   renomme test.txt en archive.txt
+    #
+    # La recherche de l'emplacement n'est PAS faite ici.
+    # Le backend ne fait qu'identifier l'intention.
+    # file_tools.py recherchera ensuite uniquement dans les
+    # six racines utilisateur autorisées.
+    # ========================================================
+
+    pattern_without_root = (
+        r"^\s*"
+        r"(?:renomme|renommer)"
+        r"\s+"
+        r"(?:(?:le|la)\s+fichier\s+)?"
+        r"(.+?)"
+        r"\s+en\s+"
+        r"(.+?)"
+        r"\s*[.!?]?\s*$"
+    )
+
+    match = re.fullmatch(
+        pattern_without_root,
         user_message,
         flags=re.IGNORECASE
     )
 
     if not match:
-
         return []
 
     old_name = (
@@ -2119,64 +2408,32 @@ def parse_rename_file(
         .strip()
     )
 
-    root_name = (
-        normalize_file_root(
-            match.group(3)
-        )
-    )
-
-    if not root_name:
-
-        return []
-
-    # --------------------------------------------------------
-    # Noms simples uniquement
-    # --------------------------------------------------------
-
     if not is_safe_simple_file_name(
         old_name
     ):
-
         return []
 
     if not is_safe_simple_file_name(
         new_name
     ):
-
         return []
-
-    # --------------------------------------------------------
-    # Même nom ou simple changement de casse
-    # --------------------------------------------------------
 
     if (
         old_name.casefold()
         ==
         new_name.casefold()
     ):
-
         return []
 
-    # --------------------------------------------------------
-    # Aucun changement d'extension
-    # --------------------------------------------------------
-
-    if (
-        get_extension_chain(
-            old_name
-        )
-        !=
-        get_extension_chain(
-            new_name
-        )
-    ):
-
+    old_extension = get_extension_chain(old_name)
+    new_extension = get_extension_chain(new_name)
+    if old_extension and new_extension and old_extension != new_extension:
         return []
 
     return [
         make_action(
-            "rename_file",
-            root_name,
+            "rename_file_auto",
+            "auto",
             {
                 "old_name": old_name,
                 "new_name": new_name,
@@ -2538,6 +2795,164 @@ def parse_create_file_with_content(
             }
         )
     ]
+
+
+
+# ============================================================
+# MODIFIER UN FICHIER TEXTE EXISTANT
+# ============================================================
+
+def parse_modify_file_content(
+    user_message
+):
+    """
+    Formes strictes acceptées :
+
+        remplace le contenu de notes.txt dans Documents par Réunion à 15h
+        ajoute au fichier notes.txt dans Documents le contenu Pense à envoyer le rapport
+        ajoute une ligne à journal.txt dans Documents avec le contenu Test terminé
+
+    Les opérations de masse, chemins et jokers ne sont jamais interprétés.
+    """
+
+    root_pattern = (
+        r"bureau|desktop|"
+        r"documents?|"
+        r"téléchargements?|telechargements?|downloads?|"
+        r"images?|photos?|pictures?|"
+        r"vidéos?|videos?|"
+        r"musiques?|music"
+    )
+
+    patterns = [
+        (
+            "replace_content",
+            (
+                r"^\s*"
+                r"(?:remplace|remplacer)"
+                r"\s+le\s+contenu\s+(?:de|du)\s+"
+                r"(?:(?:le|la)\s+fichier\s+)?"
+                r"(.+?)"
+                r"\s+dans\s+"
+                r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+                r"(" + root_pattern + r")"
+                r"\s+par"
+                r"\s*:?[ \t]*"
+                r"(.+?)"
+                r"\s*$"
+            )
+        ),
+        (
+            "append_line",
+            (
+                r"^\s*"
+                r"(?:ajoute|ajouter)"
+                r"\s+une\s+ligne\s+[àa]\s+"
+                r"(?:(?:le|la)\s+fichier\s+)?"
+                r"(.+?)"
+                r"\s+dans\s+"
+                r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+                r"(" + root_pattern + r")"
+                r"\s+avec\s+le\s+contenu"
+                r"\s*:?[ \t]*"
+                r"(.+?)"
+                r"\s*$"
+            )
+        ),
+        (
+            "append_content",
+            (
+                r"^\s*"
+                r"(?:ajoute|ajouter)"
+                r"\s+(?:au|à|a)\s+fichier\s+"
+                r"(.+?)"
+                r"\s+dans\s+"
+                r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+                r"(" + root_pattern + r")"
+                r"\s+le\s+contenu"
+                r"\s*:?[ \t]*"
+                r"(.+?)"
+                r"\s*$"
+            )
+        ),
+    ]
+
+    for mode, pattern in patterns:
+        match = re.fullmatch(
+            pattern,
+            user_message,
+            flags=re.IGNORECASE
+        )
+
+        if not match:
+            continue
+
+        file_name = match.group(1).strip()
+        root_name = normalize_file_root(
+            match.group(2)
+        )
+        content = match.group(3).strip()
+
+        if not root_name:
+            return []
+
+        if not is_safe_simple_file_name(
+            file_name
+        ):
+            return []
+
+        if normalize_text(
+            file_name
+        ) in MASS_MODIFY_TERMS:
+            return []
+
+        extension = (
+            Path(file_name)
+            .suffix
+            .lower()
+        )
+
+        if extension and extension not in WRITABLE_TEXT_EXTENSIONS:
+            return []
+
+        if (
+            mode in {
+                "append_content",
+                "append_line",
+            }
+            and
+            extension
+            and
+            extension not in APPEND_SAFE_TEXT_EXTENSIONS
+        ):
+            return []
+
+        if not content:
+            return []
+
+        if (
+            mode == "append_line"
+            and
+            ("\n" in content or "\r" in content)
+        ):
+            return []
+
+        if len(content) > 65536:
+            return []
+
+        return [
+            make_action(
+                "modify_file_content",
+                root_name,
+                {
+                    "file_name": file_name,
+                    "content": content,
+                    "mode": mode,
+                }
+            )
+        ]
+
+    return []
 
 
 # ============================================================
@@ -2916,6 +3331,16 @@ def interpret(
         )
 
     # --------------------------------------------------------
+    # Modification contrôlée de fichier existant
+    # --------------------------------------------------------
+
+    if not actions:
+
+        actions = parse_modify_file_content(
+            user_message
+        )
+
+    # --------------------------------------------------------
     # Liste dossier
     # --------------------------------------------------------
 
@@ -3015,6 +3440,774 @@ def interpret(
     }
 
 
+
+# ============================================================
+# ACCES RECURSIF CONTROLE AUX SOUS-DOSSIERS
+# ============================================================
+
+_RECURSIVE_ROOT_PATTERN = (
+    r"bureau|desktop|"
+    r"documents?|docuements?|"
+    r"téléchargements?|telechargements?|downloads?|"
+    r"images?|photos?|pictures?|"
+    r"vidéos?|videos?|"
+    r"musiques?|music"
+)
+
+
+def _safe_relative_path_syntax(value, allow_empty=False):
+    if value is None:
+        return allow_empty
+    if not isinstance(value, str):
+        return False
+    value = value.strip()
+    if not value:
+        return allow_empty
+    if len(value) > 1024:
+        return False
+    if value.startswith(("\\\\", "//", "\\", "/")):
+        return False
+    if ":" in value or "*" in value or "?" in value:
+        return False
+    parts = value.replace("/", "\\").split("\\")
+    if not parts or len(parts) > 10:
+        return False
+    for part in parts:
+        if not part or part in {".", ".."} or ".." in part:
+            return False
+        if re.search(r'[<>:"/\\|?*\x00-\x1f]', part):
+            return False
+        if part.endswith((" ", ".")):
+            return False
+    return True
+
+
+def _join_relative(parent, child):
+    parent = str(parent or "").strip().replace("/", "\\").strip("\\")
+    child = str(child or "").strip().replace("/", "\\").strip("\\")
+    if parent and child:
+        return parent + "\\" + child
+    return parent or child
+
+
+def _parse_root_location(value):
+    """Retourne (racine_technique, chemin_relatif) ou (None, None)."""
+    if not isinstance(value, str):
+        return None, None
+
+    raw = value.strip().strip(".!?")
+    raw = re.sub(
+        r"^(?:mes|mon|ma|le|la|les)\s+",
+        "",
+        raw,
+        flags=re.IGNORECASE,
+    )
+
+    match = re.match(
+        r"^(" + _RECURSIVE_ROOT_PATTERN + r")(?:[\\/](.*))?$",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None, None
+
+    root = normalize_file_root(match.group(1))
+    relative = (match.group(2) or "").strip().replace("/", "\\").strip("\\")
+    if not root:
+        return None, None
+    if relative and not _safe_relative_path_syntax(relative):
+        return None, None
+    return root, relative
+
+
+def _make_nested_file_action(action, root, relative_path, **extra):
+    params = {"file_name": relative_path}
+    params.update(extra)
+    return [make_action(action, root, params)]
+
+
+def parse_find_filesystem_item_recursive(user_message):
+    text = normalize_text(user_message)
+
+    patterns = [
+        (r"^(?:trouve|trouver|cherche|chercher) le fichier (.+?)(?: dans (.+))?$", "file"),
+        (r"^(?:trouve|trouver|cherche|chercher) le dossier (.+?)(?: dans (.+))?$", "dir"),
+        (r"^(?:trouve|trouver|cherche|chercher) (.+?)(?: dans (.+))?$", "any"),
+        (r"^ou est le fichier (.+?)(?: dans (.+))?$", "file"),
+        (r"^ou est le dossier (.+?)(?: dans (.+))?$", "dir"),
+        (r"^ou est (.+?)(?: dans (.+))?$", "any"),
+    ]
+
+    for pattern, item_type in patterns:
+        match = re.fullmatch(pattern, text)
+        if not match:
+            continue
+        name = match.group(1).strip()
+        location = match.group(2).strip() if match.lastindex and match.lastindex >= 2 and match.group(2) else None
+        if not _safe_relative_path_syntax(name) or "\\" in name or "/" in name:
+            return []
+        target = "auto"
+        root = None
+        if location:
+            root, relative = _parse_root_location(location)
+            if not root or relative:
+                return []
+            target = root
+        return [make_action(
+            "find_filesystem_item",
+            target,
+            {"name": name, "item_type": item_type, "root_name": root},
+        )]
+    return []
+
+
+def parse_list_directory_recursive(user_message):
+    raw = user_message.strip()
+
+    # liste le dossier Cours dans Documents\Master1
+    match = re.fullmatch(
+        r"\s*(?:liste|lister|affiche|afficher|montre|montrer)\s+(?:le\s+)?dossier\s+(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        folder = match.group(1).strip()
+        root, parent = _parse_root_location(match.group(2))
+        if root and _safe_relative_path_syntax(folder):
+            relative = _join_relative(parent, folder)
+            return [make_action("list_directory", root, {"relative_path": relative})]
+
+    # liste Documents\Cours\Master1 / affiche le contenu de Documents\Cours
+    normalized_raw = re.sub(
+        r"^\s*(?:liste|lister|affiche|afficher|montre|montrer|voir)\s+(?:le\s+contenu\s+(?:de|du|des)\s+)?",
+        "",
+        raw,
+        flags=re.IGNORECASE,
+    ).strip().strip(".!?")
+    root, relative = _parse_root_location(normalized_raw)
+    if root and relative:
+        return [make_action("list_directory", root, {"relative_path": relative})]
+
+    # liste le dossier Cours (recherche unique puis listing)
+    match = re.fullmatch(
+        r"\s*(?:liste|lister|affiche|afficher|montre|montrer)\s+(?:le\s+)?dossier\s+([^\\/]+?)\s*[.!?]?\s*",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        name = match.group(1).strip()
+        if _safe_relative_path_syntax(name):
+            return [make_action("list_directory_auto", "auto", {"directory_name": name})]
+    return []
+
+
+def parse_access_directory_natural(user_message):
+    """
+    Navigation naturelle dans les dossiers autorisés.
+
+    Exemples :
+        accède au dossier Jean dans Documents
+        accede au dossier Jean dans Documents\\Cours
+        va dans le dossier Jean dans Documents
+        entre dans le dossier Jean
+        accède à Documents\\Cours\\Jean
+        ouvre le dossier Jean dans Documents
+        montre-moi le dossier Jean dans Documents
+
+    "Accéder" signifie ici : afficher le contenu du dossier dans
+    AgentLocal. Aucun Explorateur Windows n'est lancé par cette action.
+    """
+    raw = str(user_message or "").strip().replace("’", "'")
+
+    # --------------------------------------------------------
+    # Dossier nommé + emplacement explicite
+    # --------------------------------------------------------
+    patterns_with_location = [
+        r"\s*(?:acc[eè]de|acc[eè]der)\s+(?:au|a|à)\s+(?:le\s+)?dossier\s+(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+        r"\s*(?:va|aller|entre|entrer)\s+dans\s+(?:le\s+)?dossier\s+(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+        r"\s*(?:ouvre|ouvrir)\s+(?:le\s+)?dossier\s+(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+        r"\s*(?:montre(?:-moi|\s+moi)?|affiche(?:-moi|\s+moi)?)\s+(?:le\s+)?dossier\s+(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+        r"\s*(?:montre(?:-moi|\s+moi)?|affiche(?:-moi|\s+moi)?)\s+le\s+contenu\s+(?:de|du)\s+dossier\s+(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+    ]
+
+    for pattern in patterns_with_location:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if not match:
+            continue
+
+        folder = match.group(1).strip()
+        root, parent = _parse_root_location(match.group(2))
+
+        if not root or not _safe_relative_path_syntax(folder):
+            return []
+
+        relative = _join_relative(parent, folder)
+        return [
+            make_action(
+                "list_directory",
+                root,
+                {"relative_path": relative},
+            )
+        ]
+
+    # --------------------------------------------------------
+    # Chemin complet relatif à une racine autorisée
+    # Ex. "accède à Documents\\Cours\\Jean"
+    # --------------------------------------------------------
+    direct_patterns = [
+        r"\s*(?:acc[eè]de|acc[eè]der)\s+(?:a|à|dans)\s+(.+?)\s*[.!?]?\s*",
+        r"\s*(?:va|aller)\s+dans\s+(.+?)\s*[.!?]?\s*",
+        r"\s*(?:entre|entrer)\s+dans\s+(.+?)\s*[.!?]?\s*",
+    ]
+
+    for pattern in direct_patterns:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if not match:
+            continue
+
+        root, relative = _parse_root_location(match.group(1))
+        if root and relative:
+            return [
+                make_action(
+                    "list_directory",
+                    root,
+                    {"relative_path": relative},
+                )
+            ]
+
+    # --------------------------------------------------------
+    # Dossier sans emplacement : recherche récursive unique
+    # --------------------------------------------------------
+    patterns_auto = [
+        r"\s*(?:acc[eè]de|acc[eè]der)\s+(?:au|a|à)\s+(?:le\s+)?dossier\s+([^\\/]+?)\s*[.!?]?\s*",
+        r"\s*(?:va|aller|entre|entrer)\s+dans\s+(?:le\s+)?dossier\s+([^\\/]+?)\s*[.!?]?\s*",
+        r"\s*(?:ouvre|ouvrir)\s+(?:le\s+)?dossier\s+([^\\/]+?)\s*[.!?]?\s*",
+        r"\s*(?:montre(?:-moi|\s+moi)?|affiche(?:-moi|\s+moi)?)\s+(?:le\s+)?dossier\s+([^\\/]+?)\s*[.!?]?\s*",
+    ]
+
+    for pattern in patterns_auto:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if not match:
+            continue
+
+        name = match.group(1).strip()
+        if _safe_relative_path_syntax(name):
+            return [
+                make_action(
+                    "list_directory_auto",
+                    "auto",
+                    {"directory_name": name},
+                )
+            ]
+
+    return []
+
+
+def parse_read_file_recursive(user_message):
+    raw = user_message.strip()
+
+    patterns = [
+        r"\s*(?:lis|lire)\s+(?:(?:le|la)\s+fichier\s+)?(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+        r"\s*(?:affiche|afficher|montre|montrer)\s+le\s+contenu\s+(?:de|du)\s+(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+    ]
+    for pattern in patterns:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if not match:
+            continue
+        file_part = match.group(1).strip()
+        root, parent = _parse_root_location(match.group(2))
+        if root and _safe_relative_path_syntax(file_part):
+            relative = _join_relative(parent, file_part)
+            return _make_nested_file_action("read_file_content", root, relative)
+
+    # lis Documents\Cours\rapport.docx
+    match = re.fullmatch(
+        r"\s*(?:lis|lire)\s+(?:(?:le|la)\s+fichier\s+)?(.+?)\s*[.!?]?\s*",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        value = match.group(1).strip()
+        root, relative = _parse_root_location(value)
+        if root and relative:
+            return _make_nested_file_action("read_file_content", root, relative)
+        if _safe_relative_path_syntax(value) and "\\" not in value and "/" not in value:
+            return [make_action("read_file_auto", "auto", {"file_name": value})]
+    return []
+
+
+def parse_create_folder_recursive(user_message):
+    raw = user_message.strip()
+    match = re.fullmatch(
+        r"\s*(?:crée|cree|créer|creer)\s+(?:(?:un|le)\s+)?dossier\s+(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return []
+    folder = match.group(1).strip()
+    root, parent = _parse_root_location(match.group(2))
+    if not root or not _safe_relative_path_syntax(folder):
+        return []
+    relative = _join_relative(parent, folder)
+    if "\\" not in relative:
+        return []  # la forme racine simple est déjà gérée par l'ancien parseur
+    return [make_action("create_folder", root, {"name": relative})]
+
+
+def parse_create_file_recursive(user_message):
+    raw = user_message.strip().replace("’", "'")
+    patterns = [
+        r"\s*(?:crée|cree|créer|creer)\s+(?:(?:le|un)\s+fichier\s+)?(.+?)\s+dans\s+(.+?)\s+avec\s+le\s+contenu\s*:?[ \t]*(.+?)\s*",
+        r"\s*(?:crée|cree|créer|creer)\s+(?:(?:le|un)\s+fichier\s+)?(.+?)\s+dans\s+(.+?)\s+contenant\s*:?[ \t]*(.+?)\s*",
+    ]
+    for pattern in patterns:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if not match:
+            continue
+        file_part = match.group(1).strip()
+        root, parent = _parse_root_location(match.group(2))
+        content = match.group(3).strip()
+        if root and _safe_relative_path_syntax(file_part):
+            relative = _join_relative(parent, file_part)
+            if "\\" in relative:
+                return [make_action("create_file_with_content", root, {"file_name": relative, "content": content})]
+    return []
+
+
+def parse_modify_file_recursive(user_message):
+    raw = user_message.strip().replace("’", "'")
+    specs = [
+        (
+            "replace_content",
+            r"\s*(?:remplace|remplacer)\s+le\s+contenu\s+(?:de|du)\s+(?:(?:le|la)\s+fichier\s+)?(.+?)\s+dans\s+(.+?)\s+par\s*:?[ \t]*(.+?)\s*",
+        ),
+        (
+            "append_line",
+            r"\s*(?:ajoute|ajouter)\s+une\s+ligne\s+[àa]\s+(?:(?:le|la)\s+fichier\s+)?(.+?)\s+dans\s+(.+?)\s+avec\s+le\s+contenu\s*:?[ \t]*(.+?)\s*",
+        ),
+        (
+            "append_content",
+            r"\s*(?:ajoute|ajouter)\s+(?:au|à|a)\s+fichier\s+(.+?)\s+dans\s+(.+?)\s+le\s+contenu\s*:?[ \t]*(.+?)\s*",
+        ),
+    ]
+    for mode, pattern in specs:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if not match:
+            continue
+        file_part = match.group(1).strip()
+        root, parent = _parse_root_location(match.group(2))
+        content = match.group(3).strip()
+        if root and _safe_relative_path_syntax(file_part):
+            relative = _join_relative(parent, file_part)
+            if "\\" in relative:
+                return [make_action("modify_file_content", root, {"file_name": relative, "content": content, "mode": mode})]
+    return []
+
+
+def parse_rename_file_recursive(user_message):
+    raw = user_message.strip()
+    match = re.fullmatch(
+        r"\s*(?:renomme|renommer)\s+(?:(?:le|la)\s+fichier\s+)?(.+?)\s+en\s+(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return []
+    old_part = match.group(1).strip()
+    new_name = match.group(2).strip()
+    root, parent = _parse_root_location(match.group(3))
+    if not root or not _safe_relative_path_syntax(old_part) or not _safe_relative_path_syntax(new_name):
+        return []
+    if "\\" in new_name or "/" in new_name:
+        return []
+    old_relative = _join_relative(parent, old_part)
+    if "\\" not in old_relative:
+        return []
+    return [make_action("rename_file", root, {"old_name": old_relative, "new_name": new_name})]
+
+
+def parse_delete_file_recursive(user_message):
+    raw = user_message.strip()
+    normalized = normalize_text(raw)
+    if any(fragment in normalized for fragment in (
+        "definitivement", "sans corbeille", "sans passer par la corbeille", "vide la corbeille", "vider la corbeille"
+    )):
+        return []
+
+    match = re.fullmatch(
+        r"\s*(?:supprime|supprimer)\s+(?:(?:le|la)\s+fichier\s+)?(.+?)\s+(?:dans|de|du|des)\s+(.+?)\s*[.!?]?\s*",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        file_part = match.group(1).strip()
+        root, parent = _parse_root_location(match.group(2))
+        if root and _safe_relative_path_syntax(file_part):
+            relative = _join_relative(parent, file_part)
+            return _make_nested_file_action("delete_file", root, relative)
+
+    # supprime Documents\Cours\rapport.txt
+    match = re.fullmatch(
+        r"\s*(?:supprime|supprimer)\s+(?:(?:le|la)\s+fichier\s+)?(.+?)\s*[.!?]?\s*",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        value = match.group(1).strip()
+        root, relative = _parse_root_location(value)
+        if root and relative:
+            return _make_nested_file_action("delete_file", root, relative)
+        if _safe_relative_path_syntax(value) and "\\" not in value and "/" not in value:
+            return [make_action("delete_file_auto", "auto", {"file_name": value})]
+    return []
+
+
+def _parse_transfer_recursive(user_message, verb_pattern, action_between, action_within):
+    raw = user_message.strip()
+
+    # Forme : copie rapport.pdf de Documents\Cours vers Bureau\Archives
+    match = re.fullmatch(
+        r"\s*(?:" + verb_pattern + r")\s+(?:(?:le|la)\s+fichier\s+)?(.+?)\s+(?:de|du|des)\s+(.+?)\s+(?:vers|dans)\s+(.+?)\s*[.!?]?\s*",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        file_part = match.group(1).strip()
+        source_root, source_parent = _parse_root_location(match.group(2))
+        destination_root, destination_folder = _parse_root_location(match.group(3))
+        if source_root and destination_root and _safe_relative_path_syntax(file_part):
+            source_relative = _join_relative(source_parent, file_part)
+            if source_root == destination_root:
+                if action_within and destination_folder:
+                    return [make_action(action_within, source_root, {
+                        "file_name": source_relative,
+                        "destination_folder": destination_folder,
+                    })]
+                return []
+            return [make_action(action_between, source_root, {
+                "source_root": source_root,
+                "destination_root": destination_root,
+                "file_name": source_relative,
+                "destination_folder": destination_folder or None,
+            })]
+
+    # Forme : copie Documents\Cours\rapport.pdf vers Bureau\Archives
+    match = re.fullmatch(
+        r"\s*(?:" + verb_pattern + r")\s+(.+?)\s+(?:vers|dans)\s+(.+?)\s*[.!?]?\s*",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        source_root, source_relative = _parse_root_location(match.group(1))
+        destination_root, destination_folder = _parse_root_location(match.group(2))
+        if source_root and source_relative and destination_root:
+            if source_root == destination_root:
+                if action_within and destination_folder:
+                    return [make_action(action_within, source_root, {
+                        "file_name": source_relative,
+                        "destination_folder": destination_folder,
+                    })]
+                return []
+            return [make_action(action_between, source_root, {
+                "source_root": source_root,
+                "destination_root": destination_root,
+                "file_name": source_relative,
+                "destination_folder": destination_folder or None,
+            })]
+    return []
+
+
+def parse_copy_file_recursive(user_message):
+    return _parse_transfer_recursive(
+        user_message,
+        r"copie|copier",
+        "copy_file_between_roots",
+        None,
+    )
+
+
+def parse_move_file_recursive(user_message):
+    return _parse_transfer_recursive(
+        user_message,
+        r"déplace|deplace|déplacer|deplacer",
+        "move_file_between_roots",
+        "move_file_within_root",
+    )
+
+
+
+# ============================================================
+# OUVERTURE CONTROLEE DE DOSSIERS ET FICHIERS
+# ============================================================
+
+_OPENABLE_FILE_EXTENSIONS = {
+    ".docx", ".odt", ".xlsx", ".ods", ".pptx", ".odp",
+    ".pdf", ".html", ".htm",
+    ".txt", ".md", ".csv", ".tsv", ".json", ".xml",
+    ".yaml", ".yml", ".log", ".ini", ".cfg", ".conf",
+    ".toml", ".ics", ".vcf", ".rtf", ".eml",
+    ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp",
+    ".tif", ".tiff",
+    ".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v",
+    ".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".wma",
+}
+
+
+def _looks_like_openable_file(value):
+    if not isinstance(value, str):
+        return False
+    value = value.strip()
+    if not _safe_relative_path_syntax(value):
+        return False
+    suffix = Path(value.replace("\\", "/")).suffix.lower()
+    return suffix in _OPENABLE_FILE_EXTENSIONS
+
+
+def _reserved_non_file_open_target(value):
+    """Evite que "ouvre Edge" ou "ouvre GitHub" devienne une recherche de fichier."""
+    if not isinstance(value, str):
+        return True
+
+    value = value.strip()
+    if not value or "\\" in value or "/" in value:
+        return False
+
+    normalized = normalize_text(value)
+    if normalize_application_target(value):
+        return True
+    if normalized in WEBSITE_ALIASES:
+        return True
+    if normalized in load_site_names():
+        return True
+    if normalized in load_routine_triggers():
+        return True
+    if re.fullmatch(r"[a-z0-9][a-z0-9.-]*\.[a-z]{2,63}", normalized):
+        return True
+    return False
+
+
+def _looks_like_file_reference(value, explicit_file_context=False):
+    """
+    Accepte un fichier nomme sans extension ou avec seulement une partie du nom.
+    La resolution reelle et l'unicite sont verifiees dans recursive_file_tools.py.
+    """
+    if not isinstance(value, str):
+        return False
+
+    value = value.strip()
+    if not _safe_relative_path_syntax(value):
+        return False
+
+    leaf = value.replace("/", "\\").split("\\")[-1].strip()
+    if not leaf:
+        return False
+
+    suffix = Path(leaf).suffix.lower()
+    hard_blocked = {
+        ".exe", ".com", ".bat", ".cmd", ".ps1", ".psm1", ".vbs", ".vbe",
+        ".js", ".jse", ".wsf", ".wsh", ".scr", ".msi", ".msp", ".msc",
+        ".cpl", ".dll", ".sys", ".reg", ".lnk", ".url", ".hta", ".jar",
+    }
+    if suffix in hard_blocked:
+        return False
+
+    if not explicit_file_context and _reserved_non_file_open_target(value):
+        return False
+
+    # Une extension autorisee reste le cas le plus precis. Sans extension,
+    # le moteur de recherche fera une resolution unique par nom ou fragment.
+    if suffix in _OPENABLE_FILE_EXTENSIONS:
+        return True
+
+    return bool(leaf)
+
+
+def parse_open_directory_natural(user_message):
+    """Parses manual requests that mean opening a folder in Explorer."""
+    raw = str(user_message or "").strip().replace("\u2019", "'")
+
+    # Named folder inside an explicitly allowed root/path.
+    patterns_with_location = [
+        r"\s*(?:ouvre|ouvrir)\s+(?:le\s+)?dossier\s+(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+        r"\s*(?:acc(?:e|\u00e8)de|acc(?:e|\u00e8)der)\s+(?:au|a|\u00e0)\s+(?:le\s+)?dossier\s+(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+        r"\s*(?:va|aller|entre|entrer)\s+dans\s+(?:le\s+)?dossier\s+(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+    ]
+
+    for pattern in patterns_with_location:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if not match:
+            continue
+        folder = match.group(1).strip()
+        root, parent = _parse_root_location(match.group(2))
+        if not root or not _safe_relative_path_syntax(folder):
+            return []
+        relative = _join_relative(parent, folder)
+        return [make_action("open_directory", root, {"relative_path": relative})]
+
+    # Explicit allowed-root path.
+    direct_patterns = [
+        r"\s*(?:ouvre|ouvrir)\s+(?:le\s+)?dossier\s+(.+?)\s*[.!?]?\s*",
+        r"\s*(?:acc(?:e|\u00e8)de|acc(?:e|\u00e8)der)\s+(?:a|\u00e0|dans)\s+(.+?)\s*[.!?]?\s*",
+        r"\s*(?:va|aller|entre|entrer)\s+dans\s+(.+?)\s*[.!?]?\s*",
+    ]
+
+    for pattern in direct_patterns:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if not match:
+            continue
+        value = match.group(1).strip()
+        root, relative = _parse_root_location(value)
+        if root:
+            return [make_action("open_directory", root, {"relative_path": relative or ""})]
+
+    # Folder name without location: unique recursive discovery is required.
+    auto_patterns = [
+        r"\s*(?:ouvre|ouvrir)\s+(?:le\s+)?dossier\s+([^\\/]+?)\s*[.!?]?\s*",
+        r"\s*(?:acc(?:e|\u00e8)de|acc(?:e|\u00e8)der)\s+(?:au|a|\u00e0)\s+(?:le\s+)?dossier\s+([^\\/]+?)\s*[.!?]?\s*",
+        r"\s*(?:va|aller|entre|entrer)\s+dans\s+(?:le\s+)?dossier\s+([^\\/]+?)\s*[.!?]?\s*",
+    ]
+
+    for pattern in auto_patterns:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if not match:
+            continue
+        name = match.group(1).strip()
+        if _safe_relative_path_syntax(name) and "\\" not in name and "/" not in name:
+            return [make_action("open_directory_auto", "auto", {"directory_name": name})]
+
+    return []
+
+
+def parse_open_file_natural(user_message):
+    """Parses controlled file-opening requests without arbitrary associations."""
+    raw = str(user_message or "").strip().replace("\u2019", "'")
+
+    # File/document named inside an explicitly allowed root/path.
+    patterns_with_location = [
+        r"\s*(?:ouvre|ouvrir)\s+(?:(?:le|la)\s+)?(?:fichier|document)\s+(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+        r"\s*(?:acc(?:e|\u00e8)de|acc(?:e|\u00e8)der)\s+(?:au|a|\u00e0)\s+(?:(?:le|la)\s+)?(?:fichier|document)\s+(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+        r"\s*(?:ouvre|ouvrir)\s+(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+    ]
+
+    for pattern in patterns_with_location:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if not match:
+            continue
+        file_part = match.group(1).strip()
+        root, parent = _parse_root_location(match.group(2))
+        if not root or not _looks_like_file_reference(file_part, explicit_file_context=True):
+            continue
+        relative = _join_relative(parent, file_part)
+        return [make_action("open_file", root, {"file_name": relative})]
+
+    # Explicit allowed-root file path.
+    match = re.fullmatch(
+        r"\s*(?:ouvre|ouvrir)\s+(.+?)\s*[.!?]?\s*",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        value = match.group(1).strip()
+        root, relative = _parse_root_location(value)
+        if root and relative and _looks_like_file_reference(relative, explicit_file_context=True):
+            return [make_action("open_file", root, {"file_name": relative})]
+
+    # Explicit file/document keyword without location.
+    match = re.fullmatch(
+        r"\s*(?:ouvre|ouvrir|acc(?:e|\u00e8)de|acc(?:e|\u00e8)der)\s+(?:(?:au|a|\u00e0)\s+)?(?:(?:le|la)\s+)?(?:fichier|document)\s+([^\\/]+?)\s*[.!?]?\s*",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        name = match.group(1).strip()
+        if _looks_like_file_reference(name, explicit_file_context=True) and "\\" not in name and "/" not in name:
+            return [make_action("open_file_auto", "auto", {"file_name": name})]
+
+    # Natural short form: "ouvre rapport.pdf". Only known safe extensions
+    # are accepted so commands such as "ouvre Edge" keep their old meaning.
+    match = re.fullmatch(
+        r"\s*(?:ouvre|ouvrir)\s+([^\\/]+?)\s*[.!?]?\s*",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        name = match.group(1).strip()
+        if _looks_like_file_reference(name, explicit_file_context=False):
+            return [make_action("open_file_auto", "auto", {"file_name": name})]
+
+    return []
+
+def parse_recursive_filesystem_command(user_message):
+    parsers = (
+        parse_open_directory_natural,
+        parse_open_file_natural,
+        parse_access_directory_natural,
+        parse_find_filesystem_item_recursive,
+        parse_list_directory_recursive,
+        parse_read_file_recursive,
+        parse_create_folder_recursive,
+        parse_create_file_recursive,
+        parse_modify_file_recursive,
+        parse_rename_file_recursive,
+        parse_delete_file_recursive,
+        parse_copy_file_recursive,
+        parse_move_file_recursive,
+    )
+    for parser in parsers:
+        actions = parser(user_message)
+        if actions:
+            return actions
+    return []
+
+
+# Conserve toute l'interprétation historique, puis ajoute le nouveau
+# langage de chemins uniquement si l'ancienne logique n'a rien compris.
+_interpret_before_recursive_access = interpret
+
+
+def _interpret_strict_message(user_message):
+    """Interprete une phrase sans reformulation conversationnelle."""
+
+    habit_actions = parse_habit_command(user_message)
+    if habit_actions:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "backend": "deterministic",
+            "understood": True,
+            "actions": habit_actions,
+        }
+
+    actions = parse_recursive_filesystem_command(user_message)
+    if actions:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "backend": "deterministic",
+            "understood": True,
+            "actions": actions,
+        }
+
+    return _interpret_before_recursive_access(user_message)
+
+
+def interpret(user_message):
+    # La phrase originale reste prioritaire : compatibilite totale avec
+    # les commandes deja validees dans AgentLocal.
+    result = _interpret_strict_message(user_message)
+    if isinstance(result, dict) and result.get("understood"):
+        return result
+
+    # Le langage naturel est un secours local. Chaque variante repasse par
+    # exactement les memes parseurs et permissions que la commande stricte.
+    for candidate in build_natural_command_variants(user_message):
+        natural_result = _interpret_strict_message(candidate)
+        if isinstance(natural_result, dict) and natural_result.get("understood"):
+            natural_result = dict(natural_result)
+            natural_result["natural_language"] = True
+            return natural_result
+
+    return result
+
 # ============================================================
 # TEST
 # ============================================================
@@ -3056,7 +4249,7 @@ def main():
             "quitte",
             "stop",
             "sort",
-            "ferme"
+            "ferme",
             "arrête",
         }:
 

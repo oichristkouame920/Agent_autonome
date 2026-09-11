@@ -306,7 +306,10 @@
         "can_read_content": true,
         "can_copy_out": true,
         "can_receive_copy": true,
-        "can_create_file": true
+        "can_create_file": true,
+        "can_modify_file": true,
+        "can_open_directory": true,
+        "can_open_file": true
       },
       "documents": {
         "enabled": true,
@@ -321,7 +324,10 @@
         "can_read_content": true,
         "can_copy_out": true,
         "can_receive_copy": true,
-        "can_create_file": true
+        "can_create_file": true,
+        "can_modify_file": true,
+        "can_open_directory": true,
+        "can_open_file": true
       },
       "downloads": {
         "enabled": true,
@@ -336,7 +342,10 @@
         "can_read_content": true,
         "can_copy_out": true,
         "can_receive_copy": true,
-        "can_create_file": true
+        "can_create_file": true,
+        "can_modify_file": true,
+        "can_open_directory": true,
+        "can_open_file": true
       },
       "pictures": {
         "enabled": true,
@@ -351,7 +360,10 @@
         "can_read_content": true,
         "can_copy_out": true,
         "can_receive_copy": true,
-        "can_create_file": false
+        "can_create_file": false,
+        "can_modify_file": false,
+        "can_open_directory": true,
+        "can_open_file": true
       },
       "videos": {
         "enabled": true,
@@ -366,7 +378,10 @@
         "can_read_content": true,
         "can_copy_out": true,
         "can_receive_copy": true,
-        "can_create_file": false
+        "can_create_file": false,
+        "can_modify_file": false,
+        "can_open_directory": true,
+        "can_open_file": true
       },
       "music": {
         "enabled": true,
@@ -381,7 +396,10 @@
         "can_read_content": true,
         "can_copy_out": true,
         "can_receive_copy": true,
-        "can_create_file": false
+        "can_create_file": false,
+        "can_modify_file": false,
+        "can_open_directory": true,
+        "can_open_file": true
       }
     },
     "can_read_content": true,
@@ -393,38 +411,42 @@
       "require_explicit_user_command": true,
       "allow_from_routine": false,
       "allow_from_habit": false,
-      "allow_automatic_creation": false
+      "allow_automatic_creation": false,
+      "allow_nested_paths": true,
+      "create_missing_parents": false
     },
     "move_policy": {
       "require_explicit_user_command": true,
       "same_root_only": true,
-      "source_must_be_direct_child": true,
+      "source_must_be_direct_child": false,
       "destination_must_be_existing_subfolder": true,
       "allow_overwrite": false,
       "allow_from_routine": false,
       "allow_from_habit": false,
-      "allow_automatic_move": false
+      "allow_automatic_move": false,
+      "allow_nested_paths": true
     },
     "cross_root_move_policy": {
       "enabled": true,
       "require_explicit_user_command": true,
       "allow_between_enabled_user_roots": true,
-      "source_must_be_direct_child": true,
+      "source_must_be_direct_child": false,
       "destination_subfolder_optional": true,
       "destination_subfolder_must_exist": true,
       "allow_overwrite": false,
       "allow_from_routine": false,
       "allow_from_habit": false,
-      "allow_automatic_move": false
+      "allow_automatic_move": false,
+      "allow_nested_paths": true
     },
     "rename_policy": {
       "enabled": true,
       "require_explicit_user_command": true,
       "files_only": true,
       "allow_directory_rename": false,
-      "source_must_be_direct_child": true,
+      "source_must_be_direct_child": false,
       "same_directory_only": true,
-      "require_root_in_user_command": true,
+      "require_root_in_user_command": false,
       "maximum_items_per_command": 1,
       "allow_extension_change": false,
       "allow_case_only_rename": false,
@@ -439,7 +461,18 @@
       "allow_junctions": false,
       "allow_from_routine": false,
       "allow_from_habit": false,
-      "allow_automatic_rename": false
+      "allow_automatic_rename": false,
+      "allow_auto_root_discovery": true,
+      "auto_root_discovery_roots": [
+        "desktop",
+        "documents",
+        "downloads",
+        "pictures",
+        "videos",
+        "music"
+      ],
+      "maximum_auto_root_matches": 1,
+      "allow_nested_paths": true
     },
     "delete_policy": {
       "enabled": true,
@@ -448,7 +481,7 @@
       "allow_permanent_delete": false,
       "files_only": true,
       "allow_directory_delete": false,
-      "source_must_be_direct_child": true,
+      "source_must_be_direct_child": false,
       "require_root_in_user_command": true,
       "maximum_items_per_command": 1,
       "allow_wildcards": false,
@@ -466,13 +499,14 @@
       "allow_from_habit": false,
       "allow_automatic_delete": false,
       "require_existing_file": true,
-      "confirm_destination_is_recycle_bin": true
+      "confirm_destination_is_recycle_bin": true,
+      "allow_nested_paths": true
     },
     "copy_policy": {
       "enabled": true,
       "require_explicit_user_command": true,
       "files_only": true,
-      "source_must_be_direct_child": true,
+      "source_must_be_direct_child": false,
       "allow_between_enabled_user_roots": true,
       "destination_subfolder_optional": true,
       "destination_subfolder_must_exist": true,
@@ -494,13 +528,14 @@
       "allow_from_routine": false,
       "allow_from_habit": false,
       "allow_automatic_copy": false,
-      "verify_source_unchanged_after_copy": true
+      "verify_source_unchanged_after_copy": true,
+      "allow_nested_paths": true
     },
     "read_content_policy": {
       "enabled": true,
       "require_explicit_user_command": true,
       "files_only": true,
-      "source_must_be_direct_child": true,
+      "source_must_be_direct_child": false,
       "require_root_in_user_command": true,
       "maximum_items_per_command": 1,
       "allow_wildcards": false,
@@ -558,13 +593,14 @@
       "maximum_archive_relevant_uncompressed_bytes": 33554432,
       "maximum_archive_single_entry_bytes": 8388608,
       "maximum_pdf_pages": 100,
-      "allow_encrypted_documents": false
+      "allow_encrypted_documents": false,
+      "allow_nested_paths": true
     },
     "create_file_policy": {
       "enabled": true,
       "require_explicit_user_command": true,
       "files_only": true,
-      "destination_must_be_direct_child": true,
+      "destination_must_be_direct_child": false,
       "require_root_in_user_command": true,
       "maximum_items_per_command": 1,
       "allow_overwrite": false,
@@ -602,7 +638,8 @@
         ".htm",
         ".rtf",
         ".eml"
-      ]
+      ],
+      "allow_nested_paths": true
     },
     "security_policy": {
       "deny_by_default": true,
@@ -683,7 +720,225 @@
         ".wma"
       ]
     },
-    "can_write_content": true
+    "can_write_content": true,
+    "can_modify_content": true,
+    "modify_file_policy": {
+      "enabled": true,
+      "require_explicit_user_command": true,
+      "files_only": true,
+      "source_must_be_direct_child": false,
+      "require_root_in_user_command": true,
+      "maximum_items_per_command": 1,
+      "allowed_modes": [
+        "replace_content",
+        "append_content",
+        "append_line"
+      ],
+      "allow_create_if_missing": false,
+      "allow_extension_change": false,
+      "allow_wildcards": false,
+      "allow_recursive_write": false,
+      "allow_mass_write": false,
+      "allow_hidden_files": false,
+      "allow_system_files": false,
+      "allow_reparse_points": false,
+      "allow_symbolic_links": false,
+      "allow_junctions": false,
+      "allow_binary_content": false,
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_automatic_write": false,
+      "atomic_replace_required": true,
+      "verify_source_unchanged_before_commit": true,
+      "preserve_detected_encoding": true,
+      "maximum_existing_file_bytes": 1048576,
+      "maximum_added_content_bytes": 65536,
+      "maximum_result_bytes": 1048576,
+      "allowed_encodings": [
+        "utf-8",
+        "utf-8-sig",
+        "cp1252"
+      ],
+      "allowed_extensions": [
+        ".txt",
+        ".md",
+        ".csv",
+        ".tsv",
+        ".json",
+        ".xml",
+        ".yaml",
+        ".yml",
+        ".log",
+        ".ini",
+        ".cfg",
+        ".conf",
+        ".toml",
+        ".ics",
+        ".vcf",
+        ".html",
+        ".htm",
+        ".rtf",
+        ".eml"
+      ],
+      "append_safe_extensions": [
+        ".txt",
+        ".md",
+        ".csv",
+        ".tsv",
+        ".log"
+      ],
+      "allow_nested_paths": true
+    },
+    "recursive_access_policy": {
+      "enabled": true,
+      "allow_nested_paths": true,
+      "allow_relative_paths": true,
+      "allow_absolute_paths": false,
+      "allow_recursive_search": true,
+      "allow_auto_discovery": true,
+      "auto_discovery_roots": [
+        "desktop",
+        "documents",
+        "downloads",
+        "pictures",
+        "videos",
+        "music"
+      ],
+      "maximum_depth": 10,
+      "maximum_search_entries": 6000,
+      "maximum_search_results": 20,
+      "follow_symbolic_links": false,
+      "follow_junctions": false,
+      "follow_reparse_points": false,
+      "allow_hidden_files": false,
+      "allow_system_files": false,
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "require_explicit_user_command": true,
+      "maximum_items_per_command": 1
+    },
+    "can_open_existing": true,
+    "open_existing_policy": {
+      "enabled": true,
+      "require_explicit_user_command": true,
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_automatic_open": false,
+      "allow_auto_discovery": true,
+      "maximum_items_per_command": 1,
+      "allow_nested_paths": true,
+      "allow_windows_default_association": false,
+      "allow_shell_execute": false,
+      "allow_user_selected_executable": false,
+      "allowed_applications": [
+        "explorer",
+        "edge",
+        "notepad",
+        "paint",
+        "media_player",
+        "word",
+        "excel",
+        "powerpoint"
+      ],
+      "allowed_extensions": [
+        ".docx",
+        ".odt",
+        ".xlsx",
+        ".ods",
+        ".pptx",
+        ".odp",
+        ".pdf",
+        ".html",
+        ".htm",
+        ".txt",
+        ".md",
+        ".csv",
+        ".tsv",
+        ".json",
+        ".xml",
+        ".yaml",
+        ".yml",
+        ".log",
+        ".ini",
+        ".cfg",
+        ".conf",
+        ".toml",
+        ".ics",
+        ".vcf",
+        ".rtf",
+        ".eml",
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".webp",
+        ".gif",
+        ".bmp",
+        ".tif",
+        ".tiff",
+        ".mp4",
+        ".mkv",
+        ".mov",
+        ".avi",
+        ".webm",
+        ".m4v",
+        ".mp3",
+        ".wav",
+        ".flac",
+        ".m4a",
+        ".aac",
+        ".ogg",
+        ".wma"
+      ],
+      "blocked_extensions": [
+        ".exe",
+        ".com",
+        ".bat",
+        ".cmd",
+        ".ps1",
+        ".psm1",
+        ".vbs",
+        ".vbe",
+        ".js",
+        ".jse",
+        ".wsf",
+        ".wsh",
+        ".scr",
+        ".msi",
+        ".msp",
+        ".msc",
+        ".cpl",
+        ".dll",
+        ".sys",
+        ".reg",
+        ".lnk",
+        ".url",
+        ".hta",
+        ".jar",
+        ".doc",
+        ".xls",
+        ".ppt",
+        ".docm",
+        ".xlsm",
+        ".pptm",
+        ".dotm",
+        ".xltm",
+        ".potm",
+        ".ppsm"
+      ]
+    },
+    "file_reference_policy": {
+      "enabled": true,
+      "allow_missing_extension": true,
+      "allow_partial_name": true,
+      "minimum_partial_characters": 3,
+      "require_unique_match": true,
+      "allow_fuzzy_typo_matching": false,
+      "preserve_extension_on_rename_when_omitted": true,
+      "search_only_inside_enabled_user_roots": true,
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "require_explicit_user_command": true
+    }
   },
   "shell": {
     "powershell_arbitrary": false,

@@ -128,8 +128,10 @@ from file_tools import (
     list_directory,
     move_file_between_roots,
     move_file_within_root,
+    modify_file_content,
     read_file_content,
     rename_file,
+    rename_file_auto,
 )
 
 
@@ -227,10 +229,12 @@ FILE_ACTIONS_REQUIRING_EXPLICIT_PROOF = {
     "list_directory",
     "create_folder",
     "create_file_with_content",
+    "modify_file_content",
     "move_file_within_root",
     "move_file_between_roots",
     "copy_file_between_roots",
     "rename_file",
+    "rename_file_auto",
     "delete_file",
     "read_file_content",
 }
@@ -314,10 +318,12 @@ SUPPORTED_ACTIONS = {
     "list_directory",
     "create_folder",
     "create_file_with_content",
+    "modify_file_content",
     "move_file_within_root",
     "move_file_between_roots",
     "copy_file_between_roots",
     "rename_file",
+    "rename_file_auto",
     "delete_file",
     "read_file_content",
 
@@ -849,6 +855,165 @@ def verify_explicit_create_file_with_content(
     )
 
 
+
+# ============================================================
+# PREUVE EXPLICITE : MODIFICATION FICHIER EXISTANT
+# ============================================================
+
+def verify_explicit_modify_file_content(
+    user_message,
+    target,
+    params
+):
+    """
+    Vérifie le nom, la racine, le mode et le contenu à partir de la
+    phrase brute. Un backend ne peut donc pas inventer une modification.
+    """
+
+    if not isinstance(
+        user_message,
+        str
+    ):
+        return False
+
+    text = unicodedata.normalize(
+        "NFC",
+        user_message
+    ).replace(
+        "’",
+        "'"
+    ).strip()
+
+    backend_file = params.get(
+        "file_name"
+    )
+
+    backend_content = params.get(
+        "content"
+    )
+
+    backend_mode = (
+        str(
+            params.get(
+                "mode",
+                ""
+            )
+        )
+        .strip()
+        .lower()
+    )
+
+    if not isinstance(
+        backend_content,
+        str
+    ):
+        return False
+
+    backend_content = unicodedata.normalize(
+        "NFC",
+        backend_content.strip()
+    )
+
+    patterns = [
+        (
+            "replace_content",
+            (
+                r"^"
+                r"(?:remplace|remplacer)"
+                r"\s+le\s+contenu\s+(?:de|du)\s+"
+                r"(?:(?:le|la)\s+fichier\s+)?"
+                r"(.+?)"
+                r"\s+dans\s+"
+                r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+                r"(" + SECURITY_ROOT_PATTERN + r")"
+                r"\s+par"
+                r"\s*:?[ \t]*"
+                r"(.+?)"
+                r"\s*$"
+            )
+        ),
+        (
+            "append_line",
+            (
+                r"^"
+                r"(?:ajoute|ajouter)"
+                r"\s+une\s+ligne\s+[àa]\s+"
+                r"(?:(?:le|la)\s+fichier\s+)?"
+                r"(.+?)"
+                r"\s+dans\s+"
+                r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+                r"(" + SECURITY_ROOT_PATTERN + r")"
+                r"\s+avec\s+le\s+contenu"
+                r"\s*:?[ \t]*"
+                r"(.+?)"
+                r"\s*$"
+            )
+        ),
+        (
+            "append_content",
+            (
+                r"^"
+                r"(?:ajoute|ajouter)"
+                r"\s+(?:au|à|a)\s+fichier\s+"
+                r"(.+?)"
+                r"\s+dans\s+"
+                r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+                r"(" + SECURITY_ROOT_PATTERN + r")"
+                r"\s+le\s+contenu"
+                r"\s*:?[ \t]*"
+                r"(.+?)"
+                r"\s*$"
+            )
+        ),
+    ]
+
+    for expected_mode, pattern in patterns:
+        match = re.fullmatch(
+            pattern,
+            text,
+            flags=re.IGNORECASE
+        )
+
+        if not match:
+            continue
+
+        requested_file = match.group(1).strip()
+        requested_root = normalize_security_root(
+            match.group(2)
+        )
+        requested_content = unicodedata.normalize(
+            "NFC",
+            match.group(3).strip()
+        )
+
+        return bool(
+            expected_mode
+            ==
+            backend_mode
+
+            and
+
+            requested_root
+            ==
+            target
+
+            and
+
+            same_security_value(
+                requested_file,
+                backend_file
+            )
+
+            and
+
+            requested_content
+            ==
+            backend_content
+        )
+
+    return False
+
+
 # ============================================================
 # PREUVE EXPLICITE : DEPLACEMENT ENTRE RACINES
 # ============================================================
@@ -1236,6 +1401,100 @@ def verify_explicit_rename_file(
 
         and
 
+        same_security_value(
+            requested_old_name,
+            params.get(
+                "old_name"
+            )
+        )
+
+        and
+
+        same_security_value(
+            requested_new_name,
+            params.get(
+                "new_name"
+            )
+        )
+    )
+
+
+# ============================================================
+# PREUVE EXPLICITE : RENOMMAGE SANS RACINE
+# ============================================================
+
+def verify_explicit_rename_file_auto(
+    user_message,
+    target,
+    params
+):
+    """
+    Forme acceptée :
+
+        renomme ancien.pdf en nouveau.pdf
+
+    La racine n'est pas fournie par le backend. Elle sera
+    recherchée de façon déterministe uniquement dans les six
+    dossiers utilisateur autorisés.
+    """
+
+    if target != "auto":
+        return False
+
+    text = prepare_command_text(
+        user_message
+    )
+
+    pattern = (
+        r"^"
+        r"(?:renomme|renommer)"
+        r"\s+"
+        r"(?:(?:le|la)\s+fichier\s+)?"
+        r"(.+?)"
+        r"\s+en\s+"
+        r"(.+?)"
+        r"\s*[.!?]?\s*$"
+    )
+
+    match = re.fullmatch(
+        pattern,
+        text,
+        flags=re.IGNORECASE
+    )
+
+    if not match:
+        return False
+
+    requested_old_name = (
+        match
+        .group(1)
+        .strip()
+    )
+
+    requested_new_name = (
+        match
+        .group(2)
+        .strip()
+    )
+
+    # Une commande contenant explicitement "dans <racine>" doit
+    # être traitée par rename_file, jamais par le mode automatique.
+    tail_root_pattern = (
+        r"\s+dans\s+"
+        r"(?:(?:mes|mon|ma|le|la|les)\s+)?"
+        r"(?:"
+        + SECURITY_ROOT_PATTERN
+        + r")\s*[.!?]?\s*$"
+    )
+
+    if re.search(
+        tail_root_pattern,
+        text,
+        flags=re.IGNORECASE
+    ):
+        return False
+
+    return bool(
         same_security_value(
             requested_old_name,
             params.get(
@@ -1786,6 +2045,16 @@ def verify_explicit_file_action(
             )
         )
 
+    elif action == "modify_file_content":
+
+        verified = (
+            verify_explicit_modify_file_content(
+                user_message,
+                target,
+                params
+            )
+        )
+
     elif action == "move_file_between_roots":
 
         verified = (
@@ -1820,6 +2089,16 @@ def verify_explicit_file_action(
 
         verified = (
             verify_explicit_rename_file(
+                user_message,
+                target,
+                params
+            )
+        )
+
+    elif action == "rename_file_auto":
+
+        verified = (
+            verify_explicit_rename_file_auto(
                 user_message,
                 target,
                 params
@@ -2168,6 +2447,7 @@ def validate_action(
         "list_directory",
         "create_folder",
         "create_file_with_content",
+        "modify_file_content",
         "move_file_within_root",
         "move_file_between_roots",
         "copy_file_between_roots",
@@ -2184,6 +2464,15 @@ def validate_action(
                     "Racine de fichiers "
                     "interdite ou inconnue."
                 )
+            )
+
+    if action == "rename_file_auto":
+
+        if target != "auto":
+
+            return (
+                False,
+                "Cible de recherche automatique invalide."
             )
 
     # ========================================================
@@ -2316,6 +2605,110 @@ def validate_action(
             return (
                 False,
                 "Le contenu demandé est trop volumineux."
+            )
+
+
+    # ========================================================
+    # MODIFICATION FICHIER EXISTANT
+    # ========================================================
+
+    if action == "modify_file_content":
+
+        file_name = params.get(
+            "file_name"
+        )
+
+        content = params.get(
+            "content"
+        )
+
+        mode = (
+            str(
+                params.get(
+                    "mode",
+                    ""
+                )
+            )
+            .strip()
+            .lower()
+        )
+
+        if (
+            not isinstance(
+                file_name,
+                str
+            )
+            or
+            not file_name.strip()
+        ):
+            return (
+                False,
+                "Nom de fichier à modifier invalide."
+            )
+
+        file_name = file_name.strip()
+
+        if len(file_name) > 180:
+            return (
+                False,
+                "Le nom du fichier à modifier est trop long."
+            )
+
+        if (
+            "/" in file_name
+            or
+            "\\" in file_name
+            or
+            "*" in file_name
+            or
+            "?" in file_name
+            or
+            ".." in file_name
+        ):
+            return (
+                False,
+                "Le nom du fichier à modifier contient une syntaxe interdite."
+            )
+
+        if mode not in {
+            "replace_content",
+            "append_content",
+            "append_line",
+        }:
+            return (
+                False,
+                "Mode de modification invalide."
+            )
+
+        if not isinstance(
+            content,
+            str
+        ):
+            return (
+                False,
+                "Le contenu de modification est invalide."
+            )
+
+        if "\x00" in content:
+            return (
+                False,
+                "Le contenu binaire est interdit."
+            )
+
+        if len(content) > 65536:
+            return (
+                False,
+                "Le contenu de modification est trop volumineux."
+            )
+
+        if (
+            mode == "append_line"
+            and
+            ("\n" in content or "\r" in content)
+        ):
+            return (
+                False,
+                "Une seule ligne peut être ajoutée avec ce mode."
             )
 
     # ========================================================
@@ -2718,7 +3111,10 @@ def validate_action(
     # RENOMMAGE FICHIER
     # ========================================================
 
-    if action == "rename_file":
+    if action in {
+        "rename_file",
+        "rename_file_auto",
+    }:
 
         old_name = params.get(
             "old_name"
@@ -3354,6 +3750,25 @@ def execute_action(
             source="manual"
         )
 
+    if action == "modify_file_content":
+
+        return modify_file_content(
+            target,
+            params[
+                "file_name"
+            ],
+            params[
+                "content"
+            ],
+            params[
+                "mode"
+            ],
+            explicit_user_command=(
+                explicit_file_command
+            ),
+            source="manual"
+        )
+
     if action == "move_file_within_root":
 
         return move_file_within_root(
@@ -3418,6 +3833,20 @@ def execute_action(
 
         return rename_file(
             target,
+            params[
+                "old_name"
+            ],
+            params[
+                "new_name"
+            ],
+            explicit_user_command=(
+                explicit_file_command
+            )
+        )
+
+    if action == "rename_file_auto":
+
+        return rename_file_auto(
             params[
                 "old_name"
             ],
@@ -3750,7 +4179,7 @@ def execute_actions(
 
             display_results.append(
                 (
-                    "REFUSE : "
+                    "Je n'ai pas exécuté cette action : "
                     f"{error}"
                 )
             )
@@ -3790,7 +4219,7 @@ def execute_actions(
 
             display_results.append(
                 (
-                    "REFUSE : "
+                    "Je n'ai pas exécuté cette action : "
                     f"{message}"
                 )
             )
@@ -4035,9 +4464,10 @@ def process_instruction(
             )
 
         return (
-            "Je suis actuellement en mode "
-            "déterministe et je n'ai pas "
-            "reconnu cette instruction."
+            "Je n'ai pas encore reconnu cette demande. "
+            "Précise simplement l'action et la cible, par exemple : "
+            "« ouvre-moi GitHub », « cherche-moi le fichier rapport » "
+            "ou « montre-moi ce qu'il y a dans Documents »."
         )
 
     display_results, activity_results = (
@@ -4226,7 +4656,7 @@ def main():
         print()
 
         print(
-            "Analyse..."
+            "Je regarde..."
         )
 
         print()
@@ -4245,6 +4675,476 @@ def main():
 
         print()
 
+
+
+# ============================================================
+# ACCES RECURSIF CONTROLE AUX SOUS-DOSSIERS
+# ============================================================
+
+from recursive_file_tools import (
+    copy_file_between_roots as recursive_copy_file_between_roots,
+    create_file_with_content as recursive_create_file_with_content,
+    create_folder as recursive_create_folder,
+    delete_file_auto as recursive_delete_file_auto,
+    delete_file_to_recycle_bin as recursive_delete_file_to_recycle_bin,
+    find_filesystem_item as recursive_find_filesystem_item,
+    list_directory as recursive_list_directory,
+    list_directory_auto as recursive_list_directory_auto,
+    modify_file_content as recursive_modify_file_content,
+    move_file_between_roots as recursive_move_file_between_roots,
+    move_file_within_root as recursive_move_file_within_root,
+    read_file_auto as recursive_read_file_auto,
+    read_file_content as recursive_read_file_content,
+    rename_file as recursive_rename_file,
+    rename_file_auto as recursive_rename_file_auto,
+)
+
+from controlled_open_tools import (
+    open_directory as controlled_open_directory,
+    open_directory_auto as controlled_open_directory_auto,
+    open_file as controlled_open_file,
+    open_file_auto as controlled_open_file_auto,
+)
+
+from backends.deterministic_backend import (
+    interpret as deterministic_proof_interpret,
+)
+
+
+RECURSIVE_FILE_ACTIONS = {
+    "list_directory",
+    "list_directory_auto",
+    "find_filesystem_item",
+    "create_folder",
+    "create_file_with_content",
+    "modify_file_content",
+    "move_file_within_root",
+    "move_file_between_roots",
+    "copy_file_between_roots",
+    "rename_file",
+    "rename_file_auto",
+    "delete_file",
+    "delete_file_auto",
+    "read_file_content",
+    "read_file_auto",
+    "open_directory",
+    "open_directory_auto",
+    "open_file",
+    "open_file_auto",
+}
+
+SUPPORTED_ACTIONS.update(
+    {
+        "list_directory_auto",
+        "find_filesystem_item",
+        "delete_file_auto",
+        "read_file_auto",
+        "open_directory",
+        "open_directory_auto",
+        "open_file",
+        "open_file_auto",
+    }
+)
+
+FILE_ACTIONS_REQUIRING_EXPLICIT_PROOF.update(
+    {
+        "list_directory_auto",
+        "find_filesystem_item",
+        "delete_file_auto",
+        "read_file_auto",
+        "open_directory",
+        "open_directory_auto",
+        "open_file",
+        "open_file_auto",
+    }
+)
+
+
+def _contract_relative_path_ok(value, allow_empty=False, simple_only=False):
+    if value is None:
+        return allow_empty
+    if not isinstance(value, str):
+        return False
+    value = value.strip()
+    if not value:
+        return allow_empty
+    if len(value) > 1024:
+        return False
+    if value.startswith(("\\\\", "//", "\\", "/")):
+        return False
+    if ":" in value or "*" in value or "?" in value:
+        return False
+    if simple_only and ("\\" in value or "/" in value):
+        return False
+    parts = value.replace("/", "\\").split("\\")
+    if not parts or len(parts) > 10:
+        return False
+    for part in parts:
+        if not part or part in {".", ".."} or ".." in part:
+            return False
+        if re.search(r'[<>:"/\\|?*\x00-\x1f]', part):
+            return False
+        if part.endswith((" ", ".")):
+            return False
+    return True
+
+
+def _validate_recursive_file_action(action_data):
+    if not isinstance(action_data, dict):
+        return False, "Format d'action invalide."
+    if action_data.get("schema_version") != SCHEMA_VERSION:
+        return False, "Version du contrat non supportée."
+
+    action = str(action_data.get("action", "")).strip().lower()
+    target = str(action_data.get("target", "")).strip().lower()
+    params = action_data.get("params", {})
+    if not isinstance(params, dict):
+        return False, "Paramètres invalides."
+
+    if action not in RECURSIVE_FILE_ACTIONS:
+        return False, "Action fichier inconnue."
+
+    auto_actions = {
+        "list_directory_auto",
+        "find_filesystem_item",
+        "rename_file_auto",
+        "delete_file_auto",
+        "read_file_auto",
+        "open_directory_auto",
+        "open_file_auto",
+    }
+
+    if action in auto_actions:
+        if action == "find_filesystem_item":
+            if target != "auto" and target not in ALLOWED_FILE_ROOTS:
+                return False, "Racine de recherche invalide."
+        elif target != "auto":
+            return False, "Cible automatique invalide."
+    elif target not in ALLOWED_FILE_ROOTS:
+        return False, "Racine de fichiers interdite ou inconnue."
+
+    if action == "list_directory":
+        relative = params.get("relative_path", "")
+        if not _contract_relative_path_ok(relative, allow_empty=True):
+            return False, "Chemin de dossier invalide."
+
+    elif action == "list_directory_auto":
+        if not _contract_relative_path_ok(params.get("directory_name"), simple_only=True):
+            return False, "Nom de dossier à rechercher invalide."
+
+    elif action == "find_filesystem_item":
+        if not _contract_relative_path_ok(params.get("name"), simple_only=True):
+            return False, "Nom à rechercher invalide."
+        if str(params.get("item_type", "any")).strip().lower() not in {"any", "file", "dir"}:
+            return False, "Type de recherche invalide."
+        root_name = params.get("root_name")
+        if root_name is not None and str(root_name).strip().lower() not in ALLOWED_FILE_ROOTS:
+            return False, "Racine de recherche invalide."
+
+    elif action == "create_folder":
+        if not _contract_relative_path_ok(params.get("name")):
+            return False, "Chemin du dossier à créer invalide."
+
+    elif action == "create_file_with_content":
+        if not _contract_relative_path_ok(params.get("file_name")):
+            return False, "Chemin du fichier à créer invalide."
+        content = params.get("content")
+        if not isinstance(content, str) or "\x00" in content or len(content) > 65536:
+            return False, "Contenu du fichier à créer invalide ou trop volumineux."
+
+    elif action == "modify_file_content":
+        if not _contract_relative_path_ok(params.get("file_name")):
+            return False, "Chemin du fichier à modifier invalide."
+        mode = str(params.get("mode", "")).strip().lower()
+        if mode not in {"replace_content", "append_content", "append_line"}:
+            return False, "Mode de modification invalide."
+        content = params.get("content")
+        if not isinstance(content, str) or "\x00" in content or len(content) > 65536:
+            return False, "Contenu de modification invalide ou trop volumineux."
+        if mode == "append_line" and ("\n" in content or "\r" in content):
+            return False, "Une seule ligne est autorisée avec ce mode."
+
+    elif action == "move_file_within_root":
+        if not _contract_relative_path_ok(params.get("file_name")):
+            return False, "Chemin du fichier source invalide."
+        if not _contract_relative_path_ok(params.get("destination_folder"), allow_empty=False):
+            return False, "Chemin du dossier destination invalide."
+
+    elif action in {"move_file_between_roots", "copy_file_between_roots"}:
+        source_root = str(params.get("source_root", "")).strip().lower()
+        destination_root = str(params.get("destination_root", "")).strip().lower()
+        if source_root not in ALLOWED_FILE_ROOTS or destination_root not in ALLOWED_FILE_ROOTS:
+            return False, "Racine source ou destination invalide."
+        if source_root != target:
+            return False, "Incohérence entre la cible et la racine source."
+        if source_root == destination_root:
+            return False, "Les racines source et destination doivent être différentes."
+        if not _contract_relative_path_ok(params.get("file_name")):
+            return False, "Chemin du fichier source invalide."
+        destination_folder = params.get("destination_folder")
+        if destination_folder is not None and not _contract_relative_path_ok(destination_folder, allow_empty=True):
+            return False, "Chemin du dossier destination invalide."
+
+    elif action == "rename_file":
+        if not _contract_relative_path_ok(params.get("old_name")):
+            return False, "Chemin de l'ancien fichier invalide."
+        if not _contract_relative_path_ok(params.get("new_name"), simple_only=True):
+            return False, "Nouveau nom de fichier invalide."
+
+    elif action == "rename_file_auto":
+        if not _contract_relative_path_ok(params.get("old_name"), simple_only=True):
+            return False, "Ancien nom de fichier invalide."
+        if not _contract_relative_path_ok(params.get("new_name"), simple_only=True):
+            return False, "Nouveau nom de fichier invalide."
+
+    elif action in {"delete_file", "read_file_content"}:
+        if not _contract_relative_path_ok(params.get("file_name")):
+            return False, "Chemin du fichier invalide."
+
+    elif action in {"delete_file_auto", "read_file_auto"}:
+        if not _contract_relative_path_ok(params.get("file_name"), simple_only=True):
+            return False, "Nom de fichier à rechercher invalide."
+
+    elif action == "open_directory":
+        if not _contract_relative_path_ok(params.get("relative_path", ""), allow_empty=True):
+            return False, "Chemin de dossier à ouvrir invalide."
+
+    elif action == "open_directory_auto":
+        if not _contract_relative_path_ok(params.get("directory_name"), simple_only=True):
+            return False, "Nom de dossier à ouvrir invalide."
+
+    elif action == "open_file":
+        if not _contract_relative_path_ok(params.get("file_name")):
+            return False, "Chemin de fichier à ouvrir invalide."
+
+    elif action == "open_file_auto":
+        if not _contract_relative_path_ok(params.get("file_name"), simple_only=True):
+            return False, "Nom de fichier à ouvrir invalide."
+
+    return True, None
+
+
+_validate_action_before_recursive_access = validate_action
+
+
+def validate_action(action_data):
+    action = ""
+    if isinstance(action_data, dict):
+        action = str(action_data.get("action", "")).strip().lower()
+    if action in RECURSIVE_FILE_ACTIONS:
+        return _validate_recursive_file_action(action_data)
+    return _validate_action_before_recursive_access(action_data)
+
+
+def _canonical_contract_value(value):
+    if isinstance(value, dict):
+        return {
+            key: _canonical_contract_value(value[key])
+            for key in sorted(value)
+        }
+    if isinstance(value, list):
+        return [_canonical_contract_value(item) for item in value]
+    if isinstance(value, str):
+        return unicodedata.normalize("NFC", value).strip()
+    return value
+
+
+def verify_explicit_file_action(user_message, action_data):
+    """
+    Preuve indépendante du backend choisi : la phrase brute doit être
+    comprise par le parseur déterministe local et produire exactement
+    le même contrat fichier.
+    """
+    if not isinstance(user_message, str) or not user_message.strip():
+        return False, "Aucune commande utilisateur explicite n'a été fournie."
+
+    proof = deterministic_proof_interpret(user_message)
+    actions = proof.get("actions", []) if isinstance(proof, dict) else []
+    wanted = _canonical_contract_value(action_data)
+
+    for candidate in actions:
+        if _canonical_contract_value(candidate) == wanted:
+            return True, None
+
+    return False, (
+        "La manipulation de fichiers a été refusée : la commande utilisateur "
+        "ne correspond pas exactement à l'action déterministe autorisée."
+    )
+
+
+_execute_action_before_recursive_access = execute_action
+
+
+def execute_action(action_data, user_message=None):
+    action = ""
+    if isinstance(action_data, dict):
+        action = str(action_data.get("action", "")).strip().lower()
+
+    if action not in RECURSIVE_FILE_ACTIONS:
+        return _execute_action_before_recursive_access(action_data, user_message=user_message)
+
+    valid, error = validate_action(action_data)
+    if not valid:
+        return False, error
+
+    explicit, proof_error = verify_explicit_file_action(user_message, action_data)
+    if not explicit:
+        return False, proof_error
+
+    target = str(action_data.get("target", "")).strip().lower()
+    params = action_data.get("params", {})
+
+    if action == "find_filesystem_item":
+        return recursive_find_filesystem_item(
+            params["name"],
+            root_name=params.get("root_name"),
+            item_type=params.get("item_type", "any"),
+            explicit_user_command=True,
+            source="manual",
+        )
+
+    if action == "list_directory":
+        return recursive_list_directory(
+            target,
+            relative_path=params.get("relative_path", ""),
+            explicit_user_command=True,
+            source="manual",
+        )
+
+    if action == "list_directory_auto":
+        return recursive_list_directory_auto(
+            params["directory_name"],
+            explicit_user_command=True,
+            source="manual",
+        )
+
+    if action == "create_folder":
+        return recursive_create_folder(
+            target,
+            params["name"],
+            explicit_user_command=True,
+        )
+
+    if action == "create_file_with_content":
+        return recursive_create_file_with_content(
+            target,
+            params["file_name"],
+            params["content"],
+            explicit_user_command=True,
+            source="manual",
+        )
+
+    if action == "modify_file_content":
+        return recursive_modify_file_content(
+            target,
+            params["file_name"],
+            params["content"],
+            params["mode"],
+            explicit_user_command=True,
+            source="manual",
+        )
+
+    if action == "move_file_within_root":
+        return recursive_move_file_within_root(
+            target,
+            params["file_name"],
+            params["destination_folder"],
+            explicit_user_command=True,
+        )
+
+    if action == "move_file_between_roots":
+        return recursive_move_file_between_roots(
+            params["source_root"],
+            params["destination_root"],
+            params["file_name"],
+            destination_folder_name=params.get("destination_folder"),
+            explicit_user_command=True,
+        )
+
+    if action == "copy_file_between_roots":
+        return recursive_copy_file_between_roots(
+            params["source_root"],
+            params["destination_root"],
+            params["file_name"],
+            destination_folder_name=params.get("destination_folder"),
+            explicit_user_command=True,
+            source="manual",
+        )
+
+    if action == "rename_file":
+        return recursive_rename_file(
+            target,
+            params["old_name"],
+            params["new_name"],
+            explicit_user_command=True,
+        )
+
+    if action == "rename_file_auto":
+        return recursive_rename_file_auto(
+            params["old_name"],
+            params["new_name"],
+            explicit_user_command=True,
+        )
+
+    if action == "delete_file":
+        return recursive_delete_file_to_recycle_bin(
+            target,
+            params["file_name"],
+            explicit_user_command=True,
+        )
+
+    if action == "delete_file_auto":
+        return recursive_delete_file_auto(
+            params["file_name"],
+            explicit_user_command=True,
+        )
+
+    if action == "read_file_content":
+        return recursive_read_file_content(
+            target,
+            params["file_name"],
+            explicit_user_command=True,
+            source="manual",
+        )
+
+    if action == "read_file_auto":
+        return recursive_read_file_auto(
+            params["file_name"],
+            explicit_user_command=True,
+            source="manual",
+        )
+
+    if action == "open_directory":
+        return controlled_open_directory(
+            target,
+            relative_path=params.get("relative_path", ""),
+            explicit_user_command=True,
+            source="manual",
+        )
+
+    if action == "open_directory_auto":
+        return controlled_open_directory_auto(
+            params["directory_name"],
+            explicit_user_command=True,
+            source="manual",
+        )
+
+    if action == "open_file":
+        return controlled_open_file(
+            target,
+            params["file_name"],
+            explicit_user_command=True,
+            source="manual",
+        )
+
+    if action == "open_file_auto":
+        return controlled_open_file_auto(
+            params["file_name"],
+            explicit_user_command=True,
+            source="manual",
+        )
+
+    return False, "Action fichier récursive non implémentée."
 
 # ============================================================
 # DEMARRAGE
