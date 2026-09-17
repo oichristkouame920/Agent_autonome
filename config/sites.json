@@ -148,6 +148,11 @@
     "gouvernement":{
       "enabled": true,
       "url":"https://www.gouv.ci/gouvernement"
+    },
+
+    "claude":{
+      "enabled": true,
+      "url":"https://www.gouv.ci/gouvernement"
     }
   }
 }

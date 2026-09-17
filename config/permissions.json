@@ -938,6 +938,59 @@
       "allow_from_routine": false,
       "allow_from_habit": false,
       "require_explicit_user_command": true
+    },
+    "advanced_search_policy": {
+      "enabled": true,
+      "read_only": true,
+      "metadata_only": true,
+      "require_explicit_user_command": true,
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_automatic_search": false,
+      "allowed_roots": [
+        "desktop",
+        "documents",
+        "downloads",
+        "pictures",
+        "videos",
+        "music"
+      ],
+      "allowed_file_kinds": [
+        "any",
+        "pdf",
+        "word",
+        "excel",
+        "powerpoint",
+        "image",
+        "video",
+        "audio",
+        "text"
+      ],
+      "allowed_date_filters": [
+        "any",
+        "today",
+        "yesterday",
+        "this_week",
+        "last_7_days"
+      ],
+      "allowed_date_fields": [
+        "modified",
+        "created"
+      ],
+      "allowed_size_operators": [
+        "any",
+        "gt",
+        "lt"
+      ],
+      "allowed_sorts": [
+        "modified_desc",
+        "created_desc",
+        "size_desc",
+        "name_asc"
+      ],
+      "maximum_results": 20,
+      "maximum_search_entries": 6000,
+      "maximum_depth": 10
     }
   },
   "shell": {
@@ -1033,7 +1086,9 @@
     "allow_close_tab_via_this_policy": false,
     "allow_from_routine": false,
     "allow_from_habit": false,
-    "allow_automatic_access": false
+    "allow_automatic_access": false,
+    "allow_check_site_open": true,
+    "allow_open_site_in_existing_window": true
   },
   "session_context_policy": {
     "enabled": true,
@@ -1047,5 +1102,67 @@
     "allow_from_routine": false,
     "allow_from_habit": false,
     "allow_automatic_action": false
+  },
+  "screenshot_policy": {
+    "enabled": true,
+    "require_explicit_user_command": true,
+    "allow_from_routine": false,
+    "allow_from_habit": false,
+    "allow_automatic_capture": false,
+    "allowed_modes": [
+      "full_screen",
+      "active_window"
+    ],
+    "save_root": "pictures",
+    "subfolder": "Captures AgentLocal",
+    "format": "png",
+    "maximum_pixels": 40000000,
+    "allow_clipboard_only": false
+  },
+  "audio_control_policy": {
+    "enabled": true,
+    "require_explicit_user_command": true,
+    "allow_read_volume": true,
+    "allow_set_volume": true,
+    "allow_relative_change": true,
+    "allow_mute_control": true,
+    "minimum_volume_percent": 0,
+    "maximum_volume_percent": 100,
+    "default_relative_step_percent": 5,
+    "maximum_relative_change_percent": 25,
+    "allow_from_routine": false,
+    "allow_from_habit": false,
+    "allow_automatic_change": false
+  },
+  "power_information_policy": {
+    "enabled": true,
+    "read_only": true,
+    "require_explicit_user_command": true,
+    "allowed_queries": [
+      "battery",
+      "power"
+    ],
+    "allow_from_routine": false,
+    "allow_from_habit": false,
+    "allow_automatic_query": false
+  },
+  "network_information_policy": {
+    "enabled": true,
+    "read_only": true,
+    "require_explicit_user_command": true,
+    "allowed_queries": [
+      "status",
+      "local_ip",
+      "interfaces",
+      "link_speed",
+      "traffic_speed",
+      "internet_speed"
+    ],
+    "allow_passive_traffic_sample": true,
+    "passive_sample_seconds": 1.0,
+    "allow_external_speed_test": false,
+    "allow_from_routine": false,
+    "allow_from_habit": false,
+    "allow_automatic_query": false
   }
 }

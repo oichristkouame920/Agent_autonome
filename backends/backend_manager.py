@@ -10,7 +10,7 @@ from pathlib import Path
 # ============================================================
 
 SCHEMA_VERSION = 1
-ROUTING_PATCH_VERSION = "2026-09-11-actions-v1"
+ROUTING_PATCH_VERSION = "2026-09-17-v10.5-power-network-speed"
 
 
 # ============================================================
@@ -458,6 +458,8 @@ DETERMINISTIC_PREFLIGHT_ACTIONS = {
     "open_website",
     "close_website",
     "read_system_info",
+    "read_power_info",
+    "read_network_info",
     "read_clipboard",
     "write_clipboard",
     "copy_file_path",
@@ -466,14 +468,21 @@ DETERMINISTIC_PREFLIGHT_ACTIONS = {
     "open_last_reference",
     "read_last_reference",
     "copy_last_reference_path",
+    "advanced_file_search",
+    "take_screenshot",
+    "read_audio_state",
+    "set_audio_volume",
+    "change_audio_volume",
+    "set_audio_mute",
 }
 
 
 def _is_high_confidence_deterministic_result(result, module):
     """
     Ne court-circuite le backend principal que pour une intention explicite
-    et fermee. Les operations fichiers restent hors preflight afin de ne pas
-    transformer un nom libre en action par deduction.
+    et fermee. Les manipulations de fichiers nommés restent hors preflight ;
+    seule la recherche avancée par métadonnées, strictement lecture seule et
+    sans nom libre de fichier, peut passer ici.
     """
     if not isinstance(result, dict) or not result.get("understood"):
         return False

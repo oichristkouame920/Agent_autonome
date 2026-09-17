@@ -27,6 +27,7 @@ HARD_ALLOWED_ACTIONS = {
     "list_tabs",
     "close_site",
     "activate_site",
+    "open_site",
 }
 
 
@@ -396,3 +397,27 @@ def activate_site_via_bridge(
     )
 
     return success, message
+
+def open_site_via_bridge(
+    url,
+    timeout_seconds=DEFAULT_TIMEOUT_SECONDS,
+):
+    """Ouvre un nouvel onglet dans une fenêtre Edge déjà existante.
+
+    Le pont n'ouvre jamais Edge lui-même. L'extension refuse si aucune fenêtre
+    Edge active/existante n'est disponible.
+    """
+    if not isinstance(url, str):
+        return False, "URL invalide."
+
+    url = url.strip()
+    if not url or len(url) > MAX_URL_LENGTH:
+        return False, "URL invalide."
+
+    success, _, message = bridge_request(
+        "open_site",
+        {"url": url},
+        timeout_seconds=timeout_seconds,
+    )
+    return success, message
+

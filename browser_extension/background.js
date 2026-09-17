@@ -220,6 +220,59 @@ async function listTabsCommand() {
   };
 }
 
+async function openSiteCommand(command) {
+  const payload = command.payload && typeof command.payload === "object"
+    ? command.payload
+    : {};
+
+  const targetUrl = String(payload.url || "").trim();
+
+  if (!parseHttpUrl(targetUrl)) {
+    return {
+      ok: false,
+      message: "URL cible refusée par l'extension AgentLocal."
+    };
+  }
+
+  const activeTabs = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true
+  });
+
+  const anchor = activeTabs.find((tab) => {
+    return typeof tab.windowId === "number";
+  });
+
+  if (!anchor || typeof anchor.windowId !== "number") {
+    return {
+      ok: false,
+      message: "Aucune fenêtre Edge existante n'est disponible pour ouvrir ce site."
+    };
+  }
+
+  const created = await chrome.tabs.create({
+    windowId: anchor.windowId,
+    url: targetUrl,
+    active: true
+  });
+
+  if (!created || typeof created.id !== "number") {
+    return {
+      ok: false,
+      message: "Edge n'a pas créé le nouvel onglet."
+    };
+  }
+
+  await chrome.windows.update(anchor.windowId, {
+    focused: true
+  });
+
+  return {
+    ok: true,
+    message: `Site ouvert dans la fenêtre Edge existante : ${targetUrl}`
+  };
+}
+
 async function activateSiteCommand(command) {
   const payload = command.payload && typeof command.payload === "object"
     ? command.payload
@@ -295,6 +348,8 @@ async function executeCommand(command) {
       result = await listTabsCommand();
     } else if (action === "activate_site") {
       result = await activateSiteCommand(command);
+    } else if (action === "open_site") {
+      result = await openSiteCommand(command);
     } else if (action === "ping") {
       result = {
         ok: true,

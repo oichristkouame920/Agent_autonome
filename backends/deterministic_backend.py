@@ -9,7 +9,9 @@ from pathlib import Path
 # ============================================================
 
 SCHEMA_VERSION = 1
-NATURAL_LANGUAGE_PATCH_VERSION = "2026-09-11-actions-v1"
+NATURAL_LANGUAGE_PATCH_VERSION = "2026-09-17-language-v9-speech-sphere"
+ADVANCED_SEARCH_PATCH_VERSION = "2026-09-17-v10.1-advanced-file-search"
+FIELD_LANGUAGE_PATCH_VERSION = "2026-09-17-v10.2-field-language-web-context"
 
 
 # ============================================================
@@ -43,6 +45,18 @@ APPLICATION_ALIASES = {
     "microsodt edge": "edge",
     "microsft edge": "edge",
     "microsoft edg": "edge",
+    "edg": "edge",
+    "edge browser": "edge",
+    "navigateur edge": "edge",
+    "navigateur microsoft edge": "edge",
+    "microsoft edge browser": "edge",
+    "navigateur": "edge",
+    "mon navigateur": "edge",
+    "le navigateur": "edge",
+    "browser": "edge",
+    "internet": "edge",
+    "navigateur internet": "edge",
+    "navigateur web": "edge",
 
     # VS Code
     "vscode": "vscode",
@@ -51,6 +65,13 @@ APPLICATION_ALIASES = {
     "vscod": "vscode",
     "vs cod": "vscode",
     "code": "vscode",
+    "visual code": "vscode",
+    "editeur vs code": "vscode",
+    "editeur vscode": "vscode",
+    "editeur de code": "vscode",
+    "editeur code": "vscode",
+    "outil pour coder": "vscode",
+    "outil de code": "vscode",
 
     # Explorateur Windows
     "explorateur": "explorer",
@@ -65,6 +86,9 @@ APPLICATION_ALIASES = {
     "explorer": "explorer",
     "file explorer": "explorer",
     "windows explorer": "explorer",
+    "gestionnaire de fichiers": "explorer",
+    "gestionnaire fichiers": "explorer",
+    "explorateur fichier": "explorer",
 
     # Android Studio
     "android studio": "android_studio",
@@ -73,17 +97,32 @@ APPLICATION_ALIASES = {
     # Bloc-notes
     "bloc notes": "notepad",
     "bloc-notes": "notepad",
+    "bloc-note": "notepad",
     "bloc note": "notepad",
+    "blocnotes": "notepad",
+    "blocnote": "notepad",
     "notepad": "notepad",
+    "windows notepad": "notepad",
+    "notepad windows": "notepad",
+    "editeur de texte windows": "notepad",
+    "editeur texte windows": "notepad",
+    "bloc note windows": "notepad",
+    "bloc notes windows": "notepad",
+    "petit editeur de texte": "notepad",
+    "editeur de texte simple": "notepad",
 
     # Calculatrice
     "calculatrice": "calculator",
     "calculator": "calculator",
     "calc": "calculator",
+    "calculette": "calculator",
+    "calculatrice windows": "calculator",
 
     # Paint
     "paint": "paint",
     "microsoft paint": "paint",
+    "ms paint": "paint",
+    "mspaint": "paint",
 
     # Outil Capture
     "outil capture": "snipping_tool",
@@ -91,11 +130,15 @@ APPLICATION_ALIASES = {
     "outil capture d'ecran": "snipping_tool",
     "capture d'ecran": "snipping_tool",
     "snipping tool": "snipping_tool",
+    "capture": "snipping_tool",
+    "outil capture ecran": "snipping_tool",
+    "outil de capture ecran": "snipping_tool",
 
     # Photos
     "photos": "photos",
     "microsoft photos": "photos",
     "application photos": "photos",
+    "photos windows": "photos",
 
     # Lecteur multimédia
     "lecteur multimedia": "media_player",
@@ -106,21 +149,30 @@ APPLICATION_ALIASES = {
     # Caméra
     "camera": "camera",
     "camera windows": "camera",
+    "appareil photo": "camera",
 
     # Horloge
     "horloge": "clock",
     "clock": "clock",
+    "alarmes et horloge": "clock",
+    "horloge windows": "clock",
 
     # Enregistreur audio
     "enregistreur audio": "sound_recorder",
     "magnetophone": "sound_recorder",
     "sound recorder": "sound_recorder",
     "voice recorder": "sound_recorder",
+    "enregistreur vocal": "sound_recorder",
+    "enregistreur de voix": "sound_recorder",
 
     # Pense-bêtes
     "pense betes": "sticky_notes",
     "pense-betes": "sticky_notes",
     "sticky notes": "sticky_notes",
+    "pense bete": "sticky_notes",
+    "post it": "sticky_notes",
+    "post-it": "sticky_notes",
+    "notes adhesives": "sticky_notes",
 
     # Clipchamp
     "clipchamp": "clipchamp",
@@ -137,21 +189,26 @@ APPLICATION_ALIASES = {
     "ms teams": "teams",
     "teems": "teams",
     "team": "teams",
+    "microsoft team": "teams",
 
     # Microsoft Office
     "word": "word",
     "microsoft word": "word",
+    "ms word": "word",
 
     "excel": "excel",
     "microsoft excel": "excel",
+    "ms excel": "excel",
     "exel": "excel",
 
     "powerpoint": "powerpoint",
     "power point": "powerpoint",
     "microsoft powerpoint": "powerpoint",
+    "ms powerpoint": "powerpoint",
 
     "outlook": "outlook",
     "microsoft outlook": "outlook",
+    "ms outlook": "outlook",
     "outlok": "outlook",
 
     "onenote": "onenote",
@@ -493,6 +550,7 @@ WEBSITE_ALIASES = {
 
     "outlook": "outlook",
     "microsoft outlook": "outlook",
+    "ms outlook": "outlook",
     "outlok": "outlook",
 
     "outlook perso": "outlook-perso",
@@ -570,6 +628,12 @@ WEBSITE_ALIASES = {
     "chatgpt": "chatgpt",
     "chatgtp": "chatgpt",
     "chat gpt": "chatgpt",
+    "chat": "chatgpt",
+    "le chat": "chatgpt",
+
+    "claude": "claude.ai",
+    "claude ai": "claude.ai",
+    "anthropic claude": "claude.ai",
 
     "youtube": "youtube",
 
@@ -679,8 +743,11 @@ def _strip_natural_leading_wrappers(text):
         r"^(?:s'il\s+te\s+pla[iî]t|s'il\s+vous\s+pla[iî]t|stp|svp)\s*[,;:!-]?\s+",
         r"^(?:est[- ]ce\s+que\s+tu\s+(?:peux|pourrais)|est[- ]ce\s+que\s+vous\s+(?:pouvez|pourriez)|est\s+ce\s+que\s+tu\s+(?:peux|pourrais)|est\s+ce\s+que\s+vous\s+(?:pouvez|pourriez))\s+",
         r"^(?:tu\s+(?:peux|pourrais)(?:\s+juste)?|vous\s+(?:pouvez|pourriez)(?:\s+juste)?|peux[- ]tu|pourrais[- ]tu|pouvez[- ]vous|pourriez[- ]vous|si\s+tu\s+peux|tu\s+veux\s+bien|vous\s+voulez\s+bien|est[- ]ce\s+possible\s+de|est\s+ce\s+possible\s+de|possible\s+de)\s+",
-        r"^(?:j'aimerais|j'aimerai|je\s+voudrais|je\s+veux|j'aurais\s+besoin|j'ai\s+besoin)\s+(?:que\s+(?:tu|vous)\s+)?",
+        r"^(?:j'aimerais\s+bien|j'aimerai\s+bien|je\s+voudrais\s+bien|je\s+veux\s+juste|j'ai\s+juste\s+besoin|j'aimerais|j'aimerai|je\s+voudrais|je\s+veux|j'aurais\s+besoin|j'ai\s+besoin)\s+(?:que\s+(?:tu|vous)\s+)?",
+        r"^(?:ce\s+serait\s+possible\s+de|ca\s+serait\s+possible\s+de|ça\s+serait\s+possible\s+de|si\s+c'est\s+possible|si\s+possible)\s+",
         r"^(?:merci\s+de|veuillez|je\s+te\s+demande\s+de|je\s+vous\s+demande\s+de)\s+",
+        r"^(?:vas[- ]y|allez[- ]y)\s*[,;:!-]?\s+",
+        r"^(?:essaie|essaye)\s+(?:un\s+peu\s+)?de\s+",
         r"^(?:ok|d'accord|bon|alors|donc|eh)\s*[,;:!-]?\s+",
         r"^(?:il\s+)?faut(?:\s+que\s+(?:tu|vous))?\s+",
     )
@@ -714,7 +781,7 @@ def _rewrite_natural_command_start(text):
         r"montre|montrer|montres|lis|lire|lises|cr[ée]e|cr[ée]er|cr[ée]es|"
         r"copie|copier|copies|duplique|dupliquer|dupliques|d[ée]place|d[ée]placer|d[ée]places|"
         r"range|ranger|ranges|renomme|renommer|renommes|supprime|supprimer|supprimes|"
-        r"efface|effacer|effaces|verifie|verifier|verifies|v[ée]rifie|v[ée]rifier|v[ée]rifies|"
+        r"efface|effacer|effaces|verifi|verifie|verifier|verifies|v[ée]rifie|v[ée]rifier|v[ée]rifies|"
         r"accede|acceder|accedes|acc[èe]de|acc[èe]der|acc[èe]des|va|aller|vas|"
         r"mets|met|mettre|bouge|bouger|jette|jeter|enl[eè]ve|enlever|agrandis|agrandir|agrandit|reduis|reduire|r[ée]duit|minimise|minimiser|restaure|restaurer|pr[ée]pare|pr[ée]parer|commence|commencer"
     )
@@ -750,7 +817,8 @@ def _rewrite_natural_command_start(text):
         (r"^d[ée]places\b", "deplace"),
         (r"^renommes\b", "renomme"),
         (r"^supprimes\b", "supprime"),
-        (r"^(?:verifier|v[ée]rifier|verifies|v[ée]rifies)\b", "verifie"),
+        (r"^(?:verifi|verifier|v[ée]rifier|verifies|v[ée]rifies)\b", "verifie"),
+        (r"^(?:check|checker|checke)\b", "verifie"),
         (r"^(?:acceder|acc[èeé]der|accedes|acc[èeé]des)\b", "accede"),
         (r"^(?:vas|ailles)\s+sur\b", "va sur"),
         (r"^r[ée]duit\b", "reduis"),
@@ -804,6 +872,10 @@ SAFE_NATURAL_TARGET_TYPOS = {
     "microsodt edge": "microsoft edge",
     "microsft edge": "microsoft edge",
     "microsoft edg": "microsoft edge",
+    "bloc not": "bloc-note",
+    "blok note": "bloc-note",
+    "blok notes": "bloc-notes",
+    "calculette windows": "calculatrice",
 }
 
 
@@ -863,7 +935,7 @@ def _rewrite_indirect_natural_request(text):
     # Verifications conversationnelles courantes.
     # Aucune application n'est lancee ici : on ne fait qu'une verification.
     match = re.fullmatch(
-        r"(?:verifie|verifier|assure toi|assure-toi|regarde|regarder|voir|check|checker|dis moi|dis-moi)\s+(?:que|si)\s+(.+?)\s+"
+        r"(?:verifie|verifier|assure toi|assure-toi|regarde|regarder|voir|check|checker|dis moi|dis-moi|tu peux me dire|peux tu me dire|peux-tu me dire|tu saurais me dire)\s+(?:que|si)\s+(.+?)\s+"
         r"(?:est\s+)?(?:ouvert|ouverte|lance|lancee|lancer|demarre|demarree|en cours|tourne|fonctionne)",
         normalized,
         flags=re.IGNORECASE,
@@ -905,11 +977,56 @@ def _rewrite_indirect_natural_request(text):
         "prepare-moi pour travailler", "prepare moi pour travailler",
         "prepare moi pour le travail", "prepare-moi pour le travail",
         "prepare moi pour le boulot", "prepare-moi pour le boulot",
+        "prepare mon espace de travail", "prepare-moi mon espace de travail",
+        "mets moi en mode travail", "mets-moi en mode travail",
+        "on lance ma routine de travail",
         "commence ma routine", "commencer ma routine",
     }:
         routine_ids = sorted(set(load_routine_triggers().values()))
         if len(routine_ids) == 1:
             return "lance ma routine de travail"
+
+    # Formulations naturelles explicites pour ouvrir une application connue.
+    # Ces regles ne s'appliquent qu'au catalogue ferme des applications.
+    match = re.fullmatch(
+        r"(?:mets|met)\s+(.+?)\s+en\s+route",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        candidate = match.group(1).strip()
+        if normalize_application_target(candidate):
+            return f"ouvre {candidate}"
+
+    match = re.fullmatch(
+        r"(?:on\s+peut|est[- ]ce\s+qu[' ]?on\s+peut)\s+(?:ouvrir|lancer)\s+(.+)",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        candidate = match.group(1).strip()
+        if normalize_application_target(candidate):
+            return f"ouvre {candidate}"
+
+    # Edge : la commande manuelle explicite ouvre deja une nouvelle fenetre.
+    # On ne fait ici que normaliser des facons naturelles de demander cette meme action.
+    if re.fullmatch(
+        r"(?:ouvre|ouvrir|lance|lancer)(?:-moi|\s+moi)?\s+(?:encore\s+edge|une\s+(?:autre|nouvelle)\s+fenetre\s+(?:de\s+)?edge|une\s+fenetre\s+edge\s+en\s+plus)",
+        normalized,
+        flags=re.IGNORECASE,
+    ):
+        return "ouvre edge"
+
+    # Questions d'etat tres orales : « Edge ca tourne ? », « Edge il est ouvert ? ».
+    match = re.fullmatch(
+        r"(.+?)\s+(?:ca\s+tourne|il\s+est\s+(?:ouvert|lance)|elle\s+est\s+(?:ouverte|lancee))",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        candidate = match.group(1).strip()
+        if normalize_application_target(candidate):
+            return f"verifie si {candidate} est ouvert"
 
     # Tournures orales non ambigues vers une cible connue.
     match = re.fullmatch(
@@ -931,6 +1048,24 @@ def _rewrite_indirect_natural_request(text):
         candidate = match.group(1).strip()
         if normalize_application_target(candidate):
             return f"mets {candidate} au premier plan"
+
+    # Besoins fonctionnels naturels, avec correspondances fermees et non ambigues.
+    direct_task_rules = (
+        (r"^(?:je veux|j'aimerais|je voudrais|j'ai besoin de)\s+(?:coder|programmer|developper|faire du code|ecrire du code)$", "ouvre vs code"),
+        (r"^(?:je veux|j'aimerais|je voudrais|j'ai besoin de)\s+(?:naviguer sur internet|aller sur internet|ouvrir internet)$", "ouvre edge"),
+        (r"^(?:je veux|j'aimerais|je voudrais|j'ai besoin de)\s+(?:voir|parcourir|consulter)\s+(?:mes|les)\s+fichiers$", "ouvre explorateur de fichiers"),
+        (r"^(?:je veux|j'aimerais|je voudrais|je voudrais bien|j'aimerais bien|j'ai besoin de)\s+(?:prendre|ecrire|faire)\s+(?:une|des)\s+(?:note|notes)(?:\s+(?:rapide|rapides)|\s+rapidement)?$", "ouvre bloc-note"),
+        (r"^(?:je veux|j'aimerais|je voudrais|j'ai besoin de)\s+(?:faire|prendre)\s+(?:une\s+)?capture(?: d'ecran)?$", "ouvre outil de capture"),
+        (r"^(?:je veux|j'aimerais|je voudrais|j'ai besoin de)\s+(?:faire des calculs|faire un calcul|calculer quelque chose)$", "ouvre calculatrice"),
+        (r"^(?:je veux|j'aimerais|je voudrais|j'ai besoin de)\s+(?:dessiner|faire un dessin|retoucher une image|modifier une image)$", "ouvre paint"),
+        (r"^(?:je veux|j'aimerais|je voudrais|j'ai besoin de)\s+(?:envoyer|lire|consulter)\s+(?:un|mes|des)\s+(?:mail|mails|email|emails|courriel|courriels)$", "ouvre outlook"),
+        (r"^(?:je veux|j'aimerais|je voudrais|j'ai besoin de)\s+(?:prendre une photo|ouvrir la camera)$", "ouvre camera"),
+        (r"^(?:je veux|j'aimerais|je voudrais|j'ai besoin de)\s+(?:enregistrer ma voix|faire un enregistrement audio|enregistrer du son)$", "ouvre enregistreur audio"),
+        (r"^(?:je veux|j'aimerais|je voudrais|j'ai besoin de)\s+(?:mettre|regler|programmer)\s+(?:une\s+)?(?:alarme|minuteur)$", "ouvre horloge"),
+    )
+    for pattern, replacement in direct_task_rules:
+        if re.fullmatch(pattern, normalized, flags=re.IGNORECASE):
+            return replacement
 
     task_rules = (
         (
@@ -1184,7 +1319,7 @@ def _strip_spoken_ivoirian_fillers(text):
     # la variante conversationnelle; la phrase stricte reste analysee d'abord.
     for _ in range(3):
         cleaned = re.sub(
-            r"\s+(?:l\u00e0|la|hein|m\u00eame|ou\s+bien|un\s+peu)\s*[.!?]*\s*$",
+            r"\s+(?:l\u00e0|la|hein|m\u00eame|ou\s+bien|un\s+peu|stp|svp)\s*[.!?]*\s*$",
             "",
             value,
             count=1,
@@ -1207,9 +1342,9 @@ def _is_explicit_negative_request(text):
         r"^(?:il\s+)?faut\s+pas\b",
         r"^pas\s+la\s+peine\b",
         r"^je\s+(?:ne\s+)?veux\s+pas\b",
-        r"^n[' ]?(?:ouvre|lance|demarre|ferme|verifie|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active)\s+pas\b",
-        r"^ne\s+(?:ouvre|lance|demarre|ferme|verifie|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active)\s+pas\b",
-        r"^(?:ouvre|lance|demarre|ferme|verifie|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active)\s+pas\b",
+        r"^n[' ]?(?:ouvre|lance|demarre|ferme|verifie|teste|mesure|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active|capture|prends|prend|fais|fait|monte|augmente|hausse|baisse|diminue|coupe|remets|retablis|regle|regler)\s+pas\b",
+        r"^ne\s+(?:ouvre|lance|demarre|ferme|verifie|teste|mesure|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active|capture|prends|prend|fais|fait|monte|augmente|hausse|baisse|diminue|coupe|remets|retablis|regle|regler)\s+pas\b",
+        r"^(?:ouvre|lance|demarre|ferme|verifie|teste|mesure|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active|capture|prends|prend|fais|fait|monte|augmente|hausse|baisse|diminue|coupe|remets|retablis|regle|regler)\s+pas\b",
     )
     return any(re.search(pattern, value) for pattern in patterns)
 
@@ -1230,7 +1365,7 @@ def _looks_like_spoken_safe_context(text):
         "commence ma routine", "montre ", "affiche ", "liste ", "fais voir ",
         "cherche ", "trouve ", "retrouve ", "je veux voir ",
         "je veux aller sur ", "y a quoi dans ", "il y a quoi dans ", "faut ", "il faut ", "tu peux voir ",
-        "peux tu voir ", "pourrais tu voir ", "bon ", "donc ",
+        "peux tu voir ", "pourrais tu voir ", "tu peux me dire ", "peux tu me dire ", "bon ", "donc ", "vas y ",
     )
     if value.startswith(safe_starts):
         return True
@@ -1580,12 +1715,57 @@ def load_routine_triggers():
 def normalize_application_target(
     value
 ):
+    """Normalise un nom d'application naturel vers le catalogue fermé.
 
-    return APPLICATION_ALIASES.get(
-        normalize_text(
-            value
-        )
+    Cette fonction ne crée jamais une application arbitraire : elle retire
+    seulement des mots d'enrobage (article, « application », « logiciel »)
+    et quelques séparateurs avant de consulter APPLICATION_ALIASES.
+    Un nom de fichier avec extension ou un chemin ne peut donc pas devenir
+    une application par déduction.
+    """
+
+    text = normalize_text(value)
+    if not text:
+        return None
+
+    # Un chemin ou un nom de fichier explicite reste un fichier.
+    if "\\" in text or "/" in text:
+        return None
+    if re.search(r"\.[a-z0-9]{1,8}$", text):
+        return None
+
+    # Uniformise uniquement les séparateurs usuels dans les noms d'apps.
+    text = text.replace("-", " ").replace("_", " ")
+    text = re.sub(r"\s+", " ", text).strip(" .!?,'\"")
+
+    # Retire plusieurs couches possibles :
+    # « l'application le bloc-note » -> « bloc note ».
+    wrappers = (
+        r"^(?:l[' ]|le |la |les |mon |ma |mes |un |une )",
+        r"^(?:application |appli |logiciel |programme |app )",
+        r"^(?:l[' ]application |l[' ]appli |le logiciel |le programme )",
     )
+    changed = True
+    while changed and text:
+        changed = False
+        for pattern in wrappers:
+            cleaned = re.sub(pattern, "", text, count=1).strip()
+            if cleaned != text:
+                text = cleaned
+                changed = True
+                break
+
+    # Les clés historiques contiennent parfois des tirets. On essaie donc
+    # d'abord la forme nettoyée, puis une forme compatible.
+    direct = APPLICATION_ALIASES.get(text)
+    if direct:
+        return direct
+
+    compact = text.replace(" ", "")
+    if compact in {"blocnote", "blocnotes"}:
+        return "notepad"
+
+    return None
 
 
 def normalize_file_root(
@@ -4899,6 +5079,26 @@ def _reserved_non_file_open_target(value):
     # Une formule de politesse en fin de commande ne transforme pas une
     # application/site connu en faux nom de fichier (ex. « google stp »).
     clean_value = re.sub(r"\s+(?:stp|svp|merci)$", "", normalized).strip()
+
+    # Une extension de fichier explicitement autorisee garde la priorite sur
+    # l'heuristique « nom.domaine ». Ex. « ouvre bloc-note.txt » reste un
+    # fichier, tandis que « ouvre example.com » reste un site.
+    if Path(clean_value.replace("\\", "/")).suffix.lower() in _OPENABLE_FILE_EXTENSIONS:
+        return False
+
+    # Certaines demandes Edge sont des formulations d'application, jamais des noms de fichier.
+    if re.fullmatch(
+        r"(?:encore\s+edge|une\s+(?:autre|nouvelle)\s+fenetre\s+(?:de\s+)?edge|une\s+fenetre\s+edge\s+en\s+plus)",
+        clean_value,
+    ):
+        return True
+
+    # « note » seul est ambigu entre Bloc-notes, OneNote et un vrai fichier.
+    # On le réserve à une demande de précision ; « ouvre le fichier note »
+    # reste disponible via le contexte fichier explicite.
+    if clean_value in {"note", "notes", "mes notes"}:
+        return True
+
     if normalize_application_target(clean_value):
         return True
     if clean_value in WEBSITE_ALIASES:
@@ -5073,6 +5273,199 @@ def parse_open_file_natural(user_message):
 
     return []
 
+# ============================================================
+# V10.1 - RECHERCHE LOCALE AVANCEE DE FICHIERS (LECTURE SEULE)
+# ============================================================
+
+_ADVANCED_FILE_KIND_PATTERNS = (
+    ("pdf", r"\bpdf\b"),
+    ("word", r"\b(?:word|docx?|odt)\b"),
+    ("excel", r"\b(?:excel|xlsx?|ods|csv)\b"),
+    ("powerpoint", r"\b(?:power\s*point|powerpoint|pptx?|presentation(?:s)?)\b"),
+    ("image", r"\b(?:image(?:s)?|photo(?:s)?)\b"),
+    ("video", r"\bvideo(?:s)?\b"),
+    ("audio", r"\b(?:audio|audios|musique(?:s)?|son(?:s)?)\b"),
+    ("text", r"\b(?:texte|textes|txt|markdown|md)\b"),
+)
+
+
+def _advanced_search_file_kind(text):
+    for kind, pattern in _ADVANCED_FILE_KIND_PATTERNS:
+        if re.search(pattern, text):
+            return kind
+    return "any"
+
+
+def _advanced_search_root(text):
+    # Une racine explicitement nommée est prioritaire.
+    root_patterns = (
+        ("desktop", r"\b(?:dans|sur)\s+(?:mon|le|la|mes|les)?\s*\b(?:bureau|desktop)\b"),
+        ("documents", r"\b(?:dans|sur)\s+(?:mon|le|la|mes|les)?\s*\bdocuments?\b"),
+        ("downloads", r"\b(?:dans|sur)\s+(?:mon|le|la|mes|les)?\s*\b(?:telechargements?|downloads?)\b"),
+        ("pictures", r"\b(?:dans|sur)\s+(?:mon|le|la|mes|les)?\s*\b(?:images?|photos?|pictures?)\b"),
+        ("videos", r"\b(?:dans|sur)\s+(?:mon|le|la|mes|les)?\s*\bvideos?\b"),
+        ("music", r"\b(?:dans|sur)\s+(?:ma|la|mes|les)?\s*\b(?:musique|music)\b"),
+    )
+    for root, pattern in root_patterns:
+        if re.search(pattern, text):
+            return root
+
+    # Les formulations nominales « mes téléchargements d'aujourd'hui »
+    # visent explicitement la bibliothèque Téléchargements, même sans « dans ».
+    if re.search(
+        r"\b(?:mes|les|mon)?\s*(?:telechargement|telechargements|download|downloads)\b",
+        text,
+    ):
+        return "downloads"
+
+    # « ce que j'ai téléchargé aujourd'hui » vise naturellement Téléchargements.
+    if re.search(r"\b(?:telecharge|telecharges|telechargee|telechargees|telecharger)\b", text):
+        return "downloads"
+    return "auto"
+
+
+def _advanced_search_date_filter(text):
+    if re.search(r"\b(?:aujourd'hui|ce jour)\b", text):
+        return "today"
+    if re.search(r"\bhier\b", text):
+        return "yesterday"
+    if re.search(r"\bcette semaine\b", text):
+        return "this_week"
+    if re.search(r"\b(?:7|sept)\s+derniers?\s+jours?\b", text):
+        return "last_7_days"
+    return "any"
+
+
+def _advanced_search_date_field(text):
+    if re.search(r"\b(?:cree|crees|creee|creees|creation)\b", text):
+        return "created"
+    return "modified"
+
+
+def _advanced_search_size_filter(text):
+    match = re.search(
+        r"\b(plus\s+de|superieur(?:e)?s?\s+a|moins\s+de|inferieur(?:e)?s?\s+a)\s+"
+        r"(\d+(?:[.,]\d+)?)\s*(ko|kb|mo|mb|go|gb)\b",
+        text,
+    )
+    if not match:
+        return "any", 0
+
+    operator_text = match.group(1)
+    operator = "lt" if operator_text.startswith(("moins", "inferieur")) else "gt"
+    try:
+        value = float(match.group(2).replace(",", "."))
+    except ValueError:
+        return "any", 0
+
+    unit = match.group(3)
+    multiplier = {
+        "ko": 1024, "kb": 1024,
+        "mo": 1024 ** 2, "mb": 1024 ** 2,
+        "go": 1024 ** 3, "gb": 1024 ** 3,
+    }[unit]
+    size_bytes = int(value * multiplier)
+    if size_bytes <= 0:
+        return "any", 0
+    return operator, size_bytes
+
+
+def _advanced_search_limit(text):
+    # Nombre explicite seulement lorsqu'il accompagne une idée de « derniers »
+    # ou de résultats à afficher, jamais un nombre trouvé dans une taille.
+    patterns = (
+        r"\b(?:les\s+)?(\d{1,2})\s+(?:derniers?|plus\s+recents?)\s+(?:fichiers?|documents?|pdf|images?|photos?|videos?)\b",
+        r"\b(?:les\s+)?(\d{1,2})\s+(?:fichiers?|documents?)\s+(?:les\s+)?plus\s+(?:recents?|gros|volumineux)\b",
+        r"\b(?:montre|affiche|liste|donne)(?:-moi|\s+moi)?\s+(?:les\s+)?(\d{1,2})\s+(?:fichiers?|documents?|resultats?)\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
+            try:
+                return max(1, min(int(match.group(1)), 20))
+            except ValueError:
+                pass
+    return 5 if re.search(
+        r"\b(?:derniers?|plus\s+recents?)\s+(?:fichiers?|documents?)\b|"
+        r"\b(?:fichiers?|documents?)\s+(?:les\s+)?plus\s+(?:recents?|gros|volumineux)\b",
+        text,
+    ) else 10
+
+
+def _advanced_search_is_count(text):
+    return bool(re.search(
+        r"^(?:combien|j'ai\s+combien|je\s+possede\s+combien|il\s+y\s+a\s+combien)\b|"
+        r"\bcombien\s+(?:de|j'ai\s+de)\b",
+        text,
+    ))
+
+
+def _looks_like_advanced_file_search(text):
+    # Verbes/questions de consultation seulement : aucune ouverture/modification.
+    query_prefix = re.search(
+        r"^(?:montre|affiche|liste|cherche|retrouve|trouve|quels?|quelles?|combien|"
+        r"j'ai\s+combien|il\s+y\s+a\s+combien|qu'est\s+ce\s+que|qu'est-ce\s+que|y\s+a\s+quoi|il\s+y\s+a\s+quoi|"
+        r"fais\s+(?:moi\s+)?voir|donne(?:-moi|\s+moi)?)\b",
+        text,
+    )
+    if not query_prefix:
+        return False
+
+    cues = (
+        r"\baujourd'hui\b", r"\bhier\b", r"\bcette semaine\b",
+        r"\b(?:7|sept)\s+derniers?\s+jours?\b",
+        r"\b(?:derniers?|plus\s+recents?)\s+(?:fichiers?|documents?)\b",
+        r"\b(?:fichiers?|documents?)\s+(?:les\s+)?plus\s+recents?\b",
+        r"\b(?:fichiers?|documents?)\s+(?:les\s+)?plus\s+(?:gros|volumineux)\b",
+        r"\b(?:plus|moins)\s+de\s+\d+(?:[.,]\d+)?\s*(?:ko|kb|mo|mb|go|gb)\b",
+        r"\bfichiers?\s+(?:word|excel|power\s*point|powerpoint|pdf)\b",
+        r"\b(?:les|mes|des)\s+(?:pdf|images?|photos?|videos?|fichiers?\s+audio|fichiers?\s+texte)\b",
+        r"\bcombien\b.*\b(?:fichiers?|documents?|pdf|images?|photos?|videos?|word|excel)\b",
+        r"\btelecharge(?:s|e|es)?\b",
+    )
+    return any(re.search(pattern, text) for pattern in cues)
+
+
+def parse_advanced_file_search(user_message):
+    raw = str(user_message or "").strip()
+    if not raw:
+        return []
+
+    text = normalize_text(raw).replace("’", "'")
+    text = re.sub(r"\s+", " ", text).strip(" .!?")
+
+    if not _looks_like_advanced_file_search(text):
+        return []
+
+    file_kind = _advanced_search_file_kind(text)
+    root = _advanced_search_root(text)
+    date_filter = _advanced_search_date_filter(text)
+    date_field = _advanced_search_date_field(text)
+    size_operator, size_bytes = _advanced_search_size_filter(text)
+    count_only = _advanced_search_is_count(text)
+    limit = _advanced_search_limit(text)
+
+    sort = "modified_desc"
+    if date_field == "created" and (
+        date_filter != "any" or re.search(r"\b(?:plus\s+recent|dernier)\b", text)
+    ):
+        sort = "created_desc"
+    if re.search(r"\b(?:plus\s+gros|plus\s+grand|plus\s+volumineux|les\s+plus\s+gros|les\s+plus\s+volumineux)\b", text):
+        sort = "size_desc"
+
+    params = {
+        "file_kind": file_kind,
+        "date_filter": date_filter,
+        "date_field": date_field,
+        "size_operator": size_operator,
+        "size_bytes": size_bytes,
+        "sort": sort,
+        "limit": limit,
+        "count_only": count_only,
+    }
+    return [make_action("advanced_file_search", root, params)]
+
+
 def parse_recursive_filesystem_command(user_message):
     parsers = (
         parse_open_directory_natural,
@@ -5177,6 +5570,107 @@ def _normalize_root_for_controlled_action(value):
     return FILE_ROOT_ALIASES.get(normalized)
 
 
+def _choice_index_from_text(value):
+    """Convertit un ordinal explicite en numéro de choix (1..10)."""
+    text = normalize_text(value).replace("-", " ")
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"^(?:le|la|l'|numero|n)\s+", "", text).strip()
+    text = re.sub(r"\s+(?:resultat|element|fichier|document|dossier|choix)$", "", text).strip()
+
+    ordinal_map = {
+        "premier": 1, "premiere": 1, "1": 1, "1er": 1, "1ere": 1, "1e": 1,
+        "deuxieme": 2, "second": 2, "seconde": 2, "2": 2, "2e": 2, "2eme": 2,
+        "troisieme": 3, "3": 3, "3e": 3, "3eme": 3,
+        "quatrieme": 4, "4": 4, "4e": 4, "4eme": 4,
+        "cinquieme": 5, "5": 5, "5e": 5, "5eme": 5,
+        "sixieme": 6, "6": 6, "6e": 6, "6eme": 6,
+        "septieme": 7, "7": 7, "7e": 7, "7eme": 7,
+        "huitieme": 8, "8": 8, "8e": 8, "8eme": 8,
+        "neuvieme": 9, "9": 9, "9e": 9, "9eme": 9,
+        "dixieme": 10, "10": 10, "10e": 10, "10eme": 10,
+    }
+    return ordinal_map.get(text)
+
+
+def parse_explicit_open_then_window(user_message):
+    """Deux étapes explicites : ouvrir une application puis gérer sa fenêtre.
+
+    Aucun site, aucune cible inconnue et aucune décision automatique ne sont
+    acceptés. La deuxième étape doit viser explicitement la même application
+    via un pronom (le/la/lui).
+    """
+    text = normalize_text(user_message).replace("-", " ").strip(" .!?")
+    text = re.sub(r"\s+", " ", text).strip()
+
+    connector = r"(?:et|puis|et puis|et ensuite|ensuite)"
+    match = re.fullmatch(
+        rf"(?:ouvre|lance|demarre)\s+(.+?)\s+{connector}\s+"
+        r"(?:mets|met|place|positionne)\s+(?:le|la|lui)\s+(?:a|sur)\s+(?:la\s+)?(gauche|droite)",
+        text,
+    )
+    if match:
+        app = normalize_application_target(match.group(1).strip())
+        if not app:
+            return []
+        return [
+            make_action("open_application", app),
+            make_action("manage_window", app, {"operation": WINDOW_OPERATION_ALIASES[match.group(2)]}),
+        ]
+
+    match = re.fullmatch(
+        rf"(?:ouvre|lance|demarre)\s+(.+?)\s+{connector}\s+"
+        r"(?:agrandis|maximise)\s+(?:le|la|lui)",
+        text,
+    )
+    if match:
+        app = normalize_application_target(match.group(1).strip())
+        if app:
+            return [make_action("open_application", app), make_action("manage_window", app, {"operation": "maximize"})]
+        return []
+
+    match = re.fullmatch(
+        rf"(?:ouvre|lance|demarre)\s+(.+?)\s+{connector}\s+"
+        r"(?:reduis|minimise)\s+(?:le|la|lui)",
+        text,
+    )
+    if match:
+        app = normalize_application_target(match.group(1).strip())
+        if app:
+            return [make_action("open_application", app), make_action("manage_window", app, {"operation": "minimize"})]
+        return []
+
+    match = re.fullmatch(
+        rf"(?:ouvre|lance|demarre)\s+(.+?)\s+{connector}\s+"
+        r"(?:mets|met|place)\s+(?:le|la|lui)\s+(?:devant|au premier plan)",
+        text,
+    )
+    if match:
+        app = normalize_application_target(match.group(1).strip())
+        if app:
+            return [make_action("open_application", app), make_action("manage_window", app, {"operation": "focus"})]
+        return []
+
+    return []
+
+
+def parse_explicit_conditional_open(user_message):
+    """Comprend une condition utilisateur explicite sans ajouter d'autonomie."""
+    text = normalize_text(user_message).replace("-", " ").strip(" .!?")
+    text = re.sub(r"\s+", " ", text).strip()
+    match = re.fullmatch(
+        r"si\s+(.+?)\s+(?:n[' ]?est|est)\s+pas\s+(?:ouvert|ouverte|lance|lancee|demarre|demarree)"
+        r"\s*[,]?\s*(?:ouvre|lance|demarre)\s+(?:le|la|lui)",
+        text,
+    )
+    if not match:
+        return []
+    app = normalize_application_target(match.group(1).strip())
+    if not app:
+        return []
+    # open_application sait déjà répondre "déjà ouvert" sans relancer.
+    return [make_action("open_application", app)]
+
+
 def parse_controlled_local_command(user_message):
     """Parse uniquement des intentions fermées et explicitement demandées."""
     raw = str(user_message or "").strip().replace("’", "'")
@@ -5185,6 +5679,175 @@ def parse_controlled_local_command(user_message):
         return []
     plain = re.sub(r"[-]+", " ", text)
     plain = re.sub(r"\s+", " ", plain).strip()
+
+    # --------------------------------------------------------
+    # Audio Windows contrôlé - volume principal uniquement
+    # --------------------------------------------------------
+    audio_read_patterns = (
+        r"(?:quel est|c'est quoi|c est quoi) (?:le )?(?:volume|niveau du son)",
+        r"(?:le )?(?:volume|son) (?:est|il est|ca tourne|se trouve) a combien(?: pour cent)?",
+        r"(?:donne|montre|affiche|dis moi) (?:moi )?(?:le )?(?:volume|niveau du son)",
+        r"(?:niveau|etat) (?:du )?(?:volume|son)",
+        r"volume principal",
+    )
+    if any(re.fullmatch(pattern, plain) for pattern in audio_read_patterns):
+        return [make_action("read_audio_state", "master")]
+
+    # Une valeur finale explicite est prioritaire sur la notion de montée/baisse.
+    match = re.fullmatch(
+        r"(?:mets|met|regle|regler|fixe|fixer|monte|augmente|baisse|diminue) "
+        r"(?:le )?(?:volume|son) (?:a|sur) (\d{1,3})(?:\s*%|\s*pour cent)?",
+        plain,
+    )
+    if match:
+        percent = int(match.group(1))
+        if 0 <= percent <= 100:
+            return [make_action("set_audio_volume", "master", {"percent": percent})]
+        return []
+
+    match = re.fullmatch(
+        r"(?:monte|augmente|hausse) (?:moi )?(?:un peu )?(?:le )?(?:volume|son)"
+        r"(?: de (\d{1,2})(?:\s*%|\s*pour cent)?)?",
+        plain,
+    )
+    if match:
+        delta = int(match.group(1)) if match.group(1) else 5
+        if 1 <= delta <= 25:
+            return [make_action("change_audio_volume", "master", {"delta": delta})]
+        return []
+
+    match = re.fullmatch(
+        r"(?:baisse|diminue) (?:moi )?(?:un peu )?(?:le )?(?:volume|son)"
+        r"(?: de (\d{1,2})(?:\s*%|\s*pour cent)?)?",
+        plain,
+    )
+    if match:
+        delta = int(match.group(1)) if match.group(1) else 5
+        if 1 <= delta <= 25:
+            return [make_action("change_audio_volume", "master", {"delta": -delta})]
+        return []
+
+    if any(re.fullmatch(pattern, plain) for pattern in (
+        r"coupe (?:moi )?(?:le )?(?:son|volume)",
+        r"mets (?:le )?(?:son|volume) (?:en )?(?:muet|sourdine)",
+        r"mets en sourdine",
+        r"active (?:le )?mode muet",
+        r"mute (?:le )?(?:son|volume)",
+    )):
+        return [make_action("set_audio_mute", "master", {"muted": True})]
+
+    if any(re.fullmatch(pattern, plain) for pattern in (
+        r"remets (?:moi )?(?:le )?son",
+        r"retablis (?:moi )?(?:le )?son",
+        r"reactive (?:moi )?(?:le )?son",
+        r"enleve (?:le )?(?:mode )?muet",
+        r"desactive (?:le )?(?:mode )?muet",
+        r"enleve (?:la )?sourdine",
+        r"unmute (?:le )?(?:son|volume)?",
+    )):
+        return [make_action("set_audio_mute", "master", {"muted": False})]
+
+    # --------------------------------------------------------
+    # Capture d'écran contrôlée - action manuelle uniquement
+    # --------------------------------------------------------
+    screenshot_full_patterns = (
+        r"(?:fais|fait|prends|prend) (?:moi )?(?:une )?capture d[\' ]?ecran",
+        r"(?:fais|fait|prends|prend) (?:moi )?(?:une )?capture de (?:tout )?l[\' ]?ecran",
+        r"capture (?:tout )?l[\' ]?ecran",
+        r"capture mon ecran",
+        r"(?:fais|fait) (?:moi )?un screenshot",
+        r"screenshot (?:de )?(?:tout )?l[\' ]?ecran",
+    )
+    if any(re.fullmatch(pattern, plain) for pattern in screenshot_full_patterns):
+        return [make_action("take_screenshot", "full_screen")]
+
+    screenshot_window_patterns = (
+        r"(?:fais|fait|prends|prend) (?:moi )?(?:une )?capture de la fenetre active",
+        r"capture la fenetre active",
+        r"capture cette fenetre",
+        r"(?:fais|fait) (?:moi )?un screenshot de la fenetre active",
+        r"screenshot de la fenetre active",
+    )
+    if any(re.fullmatch(pattern, plain) for pattern in screenshot_window_patterns):
+        return [make_action("take_screenshot", "active_window")]
+
+
+    # --------------------------------------------------------
+    # Batterie / alimentation - lecture seule
+    # --------------------------------------------------------
+    battery_patterns = (
+        r"(?:il me reste|il reste|j ai|j'ai) combien (?:de )?batterie",
+        r"(?:ma )?batterie (?:est|elle est|se trouve) a combien(?: pour cent)?",
+        r"(?:donne|montre|affiche|dis moi) (?:moi )?(?:le )?(?:niveau|etat) (?:de )?(?:la )?batterie",
+        r"(?:niveau|etat) (?:de )?(?:la )?batterie",
+        r"batterie (?:la )?(?:ca dit quoi|est comment)",
+    )
+    if any(re.fullmatch(pattern, plain) for pattern in battery_patterns):
+        return [make_action("read_power_info", "battery")]
+
+    power_patterns = (
+        r"(?:je suis|le pc est|mon pc est) branche(?: au secteur)?",
+        r"(?:est ce que )?(?:je suis|le pc est|mon pc est) branche(?: au secteur)?",
+        r"(?:je suis|le pc est|mon pc est) sur batterie",
+        r"(?:donne|montre|affiche|dis moi) (?:moi )?(?:l )?(?:etat de )?l alimentation",
+        r"(?:etat|mode) (?:de )?l alimentation",
+    )
+    if any(re.fullmatch(pattern, plain) for pattern in power_patterns):
+        return [make_action("read_power_info", "power")]
+
+    # --------------------------------------------------------
+    # Réseau - lecture seule, sans test Internet externe
+    # --------------------------------------------------------
+    network_status_patterns = (
+        r"(?:mon )?reseau (?:est il |il est |est )?(?:actif|connecte|ok)",
+        r"(?:je suis|le pc est|mon pc est) connecte(?: au reseau)?",
+        r"(?:verifie|regarde|dis moi) (?:si )?(?:mon )?reseau (?:est )?(?:actif|connecte|ok)",
+        r"(?:etat|statut) (?:du )?reseau",
+    )
+    if any(re.fullmatch(pattern, plain) for pattern in network_status_patterns):
+        return [make_action("read_network_info", "status")]
+
+    ip_patterns = (
+        r"(?:quelle est|c est quoi|donne|montre|affiche|dis moi) (?:mon |l )?(?:adresse )?ip locale",
+        r"(?:mon )?ip locale",
+        r"adresse ip locale",
+    )
+    if any(re.fullmatch(pattern, plain) for pattern in ip_patterns):
+        return [make_action("read_network_info", "local_ip")]
+
+    interface_patterns = (
+        r"(?:quelles|quels) (?:sont )?(?:mes |les )?(?:interfaces|connexions) reseau (?:sont )?actives",
+        r"(?:liste|montre|affiche) (?:moi )?(?:mes |les )?(?:interfaces|connexions) reseau actives",
+        r"(?:mes |les )?connexions reseau actives",
+    )
+    if any(re.fullmatch(pattern, plain) for pattern in interface_patterns):
+        return [make_action("read_network_info", "interfaces")]
+
+    link_speed_patterns = (
+        r"(?:quelle est|c est quoi|donne|montre|affiche|dis moi) (?:la )?(?:vitesse|debit) (?:de )?(?:ma |mon |la )?(?:connexion|connexion reseau|wifi|wi fi|ethernet)",
+        r"(?:ma |mon |la )?(?:connexion|wifi|wi fi|ethernet) (?:est|tourne|va) a combien",
+        r"(?:vitesse|debit) (?:de )?(?:ma |mon |la )?(?:connexion|wifi|wi fi|ethernet)",
+        r"(?:teste|verifie|regarde) (?:la )?(?:vitesse|debit) (?:de )?(?:ma |mon |la )?(?:connexion|wifi|wi fi|ethernet)",
+    )
+    if any(re.fullmatch(pattern, plain) for pattern in link_speed_patterns):
+        return [make_action("read_network_info", "link_speed")]
+
+    traffic_speed_patterns = (
+        r"(?:a|à) quelle vitesse (?:mon )?reseau (?:travaille|tourne) (?:maintenant|actuellement)",
+        r"(?:quel est|c est quoi|donne|montre|affiche) (?:le )?(?:debit|trafic) reseau (?:actuel|actuellement|maintenant)",
+        r"(?:mesure|regarde|verifie) (?:le )?(?:debit|trafic) reseau (?:actuel|maintenant)",
+        r"(?:ca|ça) telecharge a combien (?:maintenant|actuellement)",
+    )
+    if any(re.fullmatch(pattern, plain) for pattern in traffic_speed_patterns):
+        return [make_action("read_network_info", "traffic_speed")]
+
+    internet_speed_patterns = (
+        r"(?:fais|fait|lance) (?:moi )?(?:un )?speed ?test",
+        r"(?:teste|mesure|verifie) (?:mon |le )?(?:debit|vitesse) internet(?: reel| reelle)?",
+        r"(?:quel est|donne|montre) (?:mon |le )?(?:debit|vitesse) internet(?: reel| reelle)?",
+    )
+    if any(re.fullmatch(pattern, plain) for pattern in internet_speed_patterns):
+        return [make_action("read_network_info", "internet_speed")]
 
     # --------------------------------------------------------
     # Informations système en lecture seule
@@ -5199,6 +5862,9 @@ def parse_controlled_local_command(user_message):
             r"(?:montre|donne moi|affiche) (?:l'utilisation|l utilisation|l'etat|l etat) (?:de )?(?:la )?(?:ram|memoire vive)",
             r"(?:utilisation|etat) (?:de )?(?:la )?(?:ram|memoire vive)",
             r"(?:ma )?ram (?:est )?(?:utilisee|utilise) a combien",
+            r"(?:la )?(?:ram|memoire vive) (?:la )?(?:ca dit quoi|est comment)",
+            r"(?:niveau|etat) (?:de la )?(?:ram|memoire vive)",
+            r"combien (?:la )?(?:ram|memoire vive) (?:prend|utilise)",
         )),
         ("disk", (
             r"(?:il reste|il me reste|j'ai|j ai) combien (?:d'espace|d espace) (?:sur )?(?:mon )?disque(?: c)?",
@@ -5207,6 +5873,8 @@ def parse_controlled_local_command(user_message):
             r"combien (?:d'espace|d espace) (?:il )?reste (?:sur )?(?:mon )?disque(?: c)?",
             r"(?:montre|donne moi|affiche) (?:l'espace|l espace) (?:libre )?(?:sur )?(?:mon )?disque(?: c)?",
             r"(?:espace disque|espace libre(?: sur)?(?: le)? disque(?: c)?)",
+            r"(?:le |mon )?disque (?:la )?(?:ca dit quoi|est comment)",
+            r"(?:niveau|etat) (?:du )?disque",
         )),
         ("cpu", (
             r"(?:mon )?(?:cpu|processeur) (?:travaille|tourne|est utilise) a combien",
@@ -5214,17 +5882,23 @@ def parse_controlled_local_command(user_message):
             r"(?:regarde|dis moi|montre) (?:un peu )?(?:l'utilisation|l utilisation) (?:du )?(?:cpu|processeur)",
             r"(?:montre|donne moi|affiche) (?:l'utilisation|l utilisation) (?:du )?(?:cpu|processeur)",
             r"(?:utilisation|etat) (?:du )?(?:cpu|processeur)",
+            r"(?:le |mon )?(?:cpu|processeur) (?:la )?(?:ca dit quoi|est comment)",
+            r"(?:niveau|etat) (?:du )?(?:cpu|processeur)",
         )),
         ("uptime", (
             r"depuis combien de temps (?:le |mon )?pc est allume",
             r"(?:le |mon )?pc est allume depuis quand",
             r"(?:le |mon )?pc est allume depuis combien de temps",
             r"(?:temps de fonctionnement|temps depuis le demarrage|uptime)(?: du pc)?",
+            r"(?:ca fait|cela fait) combien de temps (?:que )?(?:le |mon )?pc (?:tourne|est allume)",
+            r"(?:le |mon )?pc (?:a demarre|tourne) depuis quand",
         )),
         ("summary", (
             r"(?:montre|donne moi|affiche)?\s*(?:l'etat|l etat|les infos|les informations) (?:de )?(?:mon |du )?(?:pc|systeme)",
             r"(?:etat|infos|informations) systeme",
             r"comment va (?:mon )?pc",
+            r"(?:le |mon )?pc (?:la )?(?:ca dit quoi|est comment)",
+            r"(?:fais moi|donne moi|montre moi|regarde) (?:un peu )?(?:l'etat|l etat) (?:de )?(?:mon |du )?pc",
         )),
     )
     for query, patterns in system_patterns:
@@ -5242,12 +5916,17 @@ def parse_controlled_local_command(user_message):
         "lis le presse papiers", "lis le presse-papiers", "montre le presse papiers",
         "montre le presse-papiers", "affiche le presse papiers", "affiche le presse-papiers",
         "contenu du presse papiers", "contenu du presse-papiers",
+        "y a quoi dans le presse papiers", "il y a quoi dans le presse papiers",
+        "qu'est ce qu'il y a dans le presse papiers", "qu est ce qu il y a dans le presse papiers",
+        "le presse papiers ca dit quoi", "presse papiers ca dit quoi",
     }:
         return [make_action("read_clipboard", "clipboard")]
 
     clipboard_patterns = (
         r"^(?:copie|copier)\s+(?:ce|le)\s+texte\s*:\s*(.+)$",
+        r"^(?:copie|copier)\s+(?:ca|ça)\s*:\s*(.+)$",
         r"^(?:copie|copier|mets|met)\s+dans\s+le\s+presse[- ]papiers\s*:\s*(.+)$",
+        r"^(?:mets|met)\s+(?:ca|ça)\s+dans\s+le\s+presse[- ]papiers\s*:\s*(.+)$",
     )
     for pattern in clipboard_patterns:
         match = re.fullmatch(pattern, raw, flags=re.IGNORECASE | re.DOTALL)
@@ -5271,6 +5950,37 @@ def parse_controlled_local_command(user_message):
             return [make_action("copy_file_path", root, {"file_name": file_name})]
 
     # --------------------------------------------------------
+    # Sites web : vérification d'onglet et ouverture dans Edge déjà ouvert
+    # --------------------------------------------------------
+    # Ces actions sont manuelles, bornées au pont Edge local et ne lancent
+    # jamais Edge si aucune fenêtre existante n'est disponible.
+    match = re.fullmatch(
+        r"(?:verifie|verifier|regarde|dis moi|dis-moi|tu peux me dire|peux tu me dire|peux-tu me dire)\s+"
+        r"(?:que|si)\s+(.+?)\s+(?:est\s+)?(?:ouvert|ouverte|lance|lancee|en cours)(?:\s+dans\s+edge)?",
+        text,
+    )
+    if match:
+        site = match.group(1).strip()
+        # Les cibles également reconnues comme applications restent gérées
+        # par le parseur historique d'applications.
+        if not normalize_application_target(site):
+            website = normalize_website_target(site)
+            if website:
+                return [make_action("check_browser_site", website)]
+
+    match = re.fullmatch(
+        r"(?:ouvre|ouvrir|lance|lancer)\s+(.+?)\s+"
+        r"(?:dans|sur)\s+(?:(?:la|une)\s+)?(?:fenetre\s+)?edge"
+        r"(?:\s+(?:deja\s+)?(?:ouvert|ouverte|lance|lancee))?",
+        text,
+    )
+    if match:
+        site = match.group(1).strip()
+        website = normalize_website_target(site)
+        if website and not normalize_application_target(site):
+            return [make_action("open_browser_site_existing_edge", website)]
+
+    # --------------------------------------------------------
     # Onglets Edge via pont local existant
     # --------------------------------------------------------
     if text in {
@@ -5279,17 +5989,36 @@ def parse_controlled_local_command(user_message):
         "montre les onglets edge", "quels onglets sont ouverts",
         "quels sont mes onglets", "y a quoi comme onglets", "il y a quoi comme onglets",
         "y a quoi d'ouvert dans edge", "il y a quoi d'ouvert dans edge",
+        "fais moi voir les onglets", "fais voir les onglets",
+        "y a quoi dans mes onglets", "il y a quoi dans mes onglets",
+        "edge a quels onglets", "edge a quoi comme onglets",
     }:
         return [make_action("list_browser_tabs", "edge")]
 
     match = re.fullmatch(
-        r"(?:passe|passer|va|aller|active|activer|mets|met)\s+(?:sur\s+)?(?:l'onglet|l onglet|onglet)\s+(.+)",
+        r"(?:passe|passer|va|aller|active|activer|mets|met|bascule|basculer)\s+(?:moi\s+)?(?:sur\s+)?(?:l'onglet|l onglet|onglet)\s+(.+)",
         text,
     )
     if match:
         site = match.group(1).strip()
         if site and site not in {"ca", "cela", "ceci", "le", "la", "lui"}:
             return [make_action("activate_browser_tab", site)]
+
+    # --------------------------------------------------------
+    # Choix explicite dans les résultats numérotés de la dernière recherche
+    # --------------------------------------------------------
+    choice_patterns = (
+        ("open_session_choice", r"^(?:ouvre|ouvrir)\s+(.+)$"),
+        ("read_session_choice", r"^(?:lis|lire)\s+(.+)$"),
+        ("copy_session_choice_path", r"^(?:copie|copier)\s+(?:le\s+)?chemin\s+(?:du|de la|de l')?\s*(.+)$"),
+    )
+    for action_name, pattern in choice_patterns:
+        match = re.fullmatch(pattern, plain)
+        if not match:
+            continue
+        index = _choice_index_from_text(match.group(1))
+        if index is not None:
+            return [make_action(action_name, "session", {"index": index})]
 
     # --------------------------------------------------------
     # Référence conversationnelle temporaire
@@ -5331,6 +6060,33 @@ def _interpret_strict_message(user_message):
             "actions": actions,
         }
 
+    actions = parse_explicit_open_then_window(user_message)
+    if actions:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "backend": "deterministic",
+            "understood": True,
+            "actions": actions,
+        }
+
+    actions = parse_explicit_conditional_open(user_message)
+    if actions:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "backend": "deterministic",
+            "understood": True,
+            "actions": actions,
+        }
+
+    actions = parse_advanced_file_search(user_message)
+    if actions:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "backend": "deterministic",
+            "understood": True,
+            "actions": actions,
+        }
+
     actions = parse_recursive_filesystem_command(user_message)
     if actions:
         return {
@@ -5344,33 +6100,83 @@ def _interpret_strict_message(user_message):
 
 
 def parse_local_conversation(user_message):
-    """Petites reponses locales pour rendre l'interface moins robotique."""
+    """Reponses locales courtes pour une conversation naturelle mais controlee."""
     text = normalize_text(_strip_spoken_ivoirian_fillers(user_message)).strip(" .!?")
     text = re.sub(r"^(arrange|organise|range|reorganise)\s+un\s+peu\s+", r"\1 ", text)
     if not text:
         return None
 
-    if text in {"bonjour", "salut", "coucou", "hello", "bonsoir"}:
-        return "Bonjour ! Que puis-je faire pour toi ?"
+    # Salutations et prise de contact.
+    if re.fullmatch(r"(?:bonjour|salut|coucou|hello|bonsoir)(?:\s+(?:agent|agentlocal))?", text):
+        if text.startswith("bonsoir"):
+            return "Bonsoir ! Je suis prêt. Dis-moi simplement ce que tu veux faire."
+        return "Bonjour ! Je suis prêt. Dis-moi simplement ce que tu veux faire."
 
-    if text in {"merci", "merci beaucoup", "super merci", "parfait merci"}:
+    # Remerciements et validations courantes.
+    if text in {
+        "merci", "merci beaucoup", "super merci", "parfait merci", "merci hein",
+        "merci bien", "ok merci", "d'accord merci", "c'est gentil", "c est gentil",
+    }:
         return "Avec plaisir."
 
-    if text in {"ok", "okay", "d'accord", "dac", "ca marche", "c'est bon"}:
+    if text in {
+        "ok", "okay", "d'accord", "dac", "ca marche", "c'est bon", "c est bon",
+        "nickel", "parfait", "on est bon", "c'est carre", "c est carre", "bien recu",
+    }:
         return "D'accord."
 
-    if text in {"ca va", "comment ca va", "tu vas bien", "ca va agentlocal"}:
-        return "Oui, tout va bien. Que veux-tu faire ?"
+    if text in {"ca va", "comment ca va", "tu vas bien", "ca va agentlocal", "tout va bien"}:
+        return "Oui, tout va bien. Qu'est-ce que tu veux faire ?"
 
-    if text in {"c'est comment", "c est comment", "ca dit quoi"}:
-        return "Ca va. Que veux-tu faire ?"
+    if text in {"c'est comment", "c est comment", "ca dit quoi", "on dit quoi"}:
+        return "Ça va. Dis-moi ce que tu veux faire."
 
     if text in {"on est ensemble", "ya pas drap", "y a pas drap"}:
         return "D'accord, on est ensemble."
 
+    # Etat de l'assistant, sans action systeme.
+    if text in {
+        "tu es pret", "t'es pret", "t es pret", "tu es la", "t'es la", "t es la",
+        "on peut commencer", "on peut y aller", "tu fonctionnes", "tu marches",
+        "agentlocal est pret", "agentlocal tu es pret",
+    }:
+        return "Oui, je suis prêt. Donne-moi une action précise et je vérifierai qu'elle est autorisée avant de l'exécuter."
+
+    if text in {
+        "je peux te parler normalement", "je peux parler normalement",
+        "tu comprends le francais naturel", "tu comprends quand je parle normalement",
+    }:
+        return (
+            "Oui. Tu peux parler naturellement. Je reconnais plusieurs formulations courantes, "
+            "y compris certaines tournures ivoiriennes, mais je te demanderai de préciser si une action est ambiguë."
+        )
+
+    # Refus volontaire des delegations trop vagues : plus de langage, pas plus d'autonomie.
+    if text in {
+        "fais ce qu'il faut", "fais ce qu il faut", "gere ca", "gere moi ca",
+        "debrouille toi", "debrouille-toi", "fais comme tu veux", "prends la main",
+        "fais tout", "occupe toi de ca", "occupe-toi de ca", "arrange ca",
+    }:
+        return (
+            "Je peux t'aider, mais je ne décide pas seul de l'action à faire. "
+            "Dis-moi précisément ce que tu veux que j'ouvre, vérifie, déplace ou consulte."
+        )
+
+    # Demandes fonctionnelles volontairement ambigues.
+    if text in {
+        "je veux ecrire quelque chose", "je veux ecrire un texte", "je veux taper un texte",
+        "ouvre le truc pour ecrire", "ouvre ce qu'il faut pour ecrire",
+    }:
+        return "Tu veux utiliser Bloc-notes pour du texte rapide ou Word pour un document ?"
+
+    if text in {"je veux faire un tableau", "ouvre le truc pour faire un tableau"}:
+        return "Tu veux utiliser Excel pour un tableau de données ou Word pour un tableau dans un document ?"
+
     if text in {
         "arrange mes fenetres", "arrange les fenetres", "organise mes fenetres",
         "organise les fenetres", "range mes fenetres", "reorganise mes fenetres",
+        "arrange ma fenetre", "organise ma fenetre", "range ma fenetre",
+        "arrange mes fenetre", "organise mes fenetre", "range mes fenetre",
         "mets mes fenetres bien", "mets mes fenetres correctement",
         "organise mon ecran", "arrange mon ecran",
     }:
@@ -5381,24 +6187,55 @@ def parse_local_conversation(user_message):
         )
 
     if text in {
+        "ouvre note", "ouvre notes", "lance note", "lance notes",
+        "ouvre mes notes", "lance mes notes",
+    }:
+        return (
+            "Tu veux ouvrir Bloc-notes pour une note rapide ou OneNote pour tes notes organisées ? "
+            "Dis simplement « ouvre Bloc-notes » ou « ouvre OneNote »."
+        )
+
+    if text in {
+        "nettoie mes telechargements", "nettoie mes telechargement",
+        "nettoie les telechargements", "fais le menage dans mes telechargements",
+        "range mes telechargements", "range mes telechargement",
+    }:
+        return (
+            "Je ne supprime ni ne déplace automatiquement des fichiers pour « nettoyer » Téléchargements. "
+            "Je peux d'abord te montrer les fichiers les plus gros ou les plus anciens, puis tu me donneras "
+            "une action précise sur un fichier."
+        )
+
+    if text in {
         "aide", "help", "aide moi", "aide-moi", "que peux tu faire",
         "que peux-tu faire", "tu peux faire quoi", "qu'est ce que tu peux faire",
         "qu'est-ce que tu peux faire", "qu'est ce que tu sais faire", "tu sais faire quoi",
+        "tu fais quoi", "tu fais quoi exactement", "quelles sont tes fonctions",
+        "quelles sont tes possibilites", "tu peux m'aider a quoi", "tu peux m aider a quoi",
     }:
         return (
-            "Je peux ouvrir ou fermer les applications et sites autorisés, lancer tes routines, "
-            "vérifier une application, gérer explicitement une fenêtre autorisée, consulter en "
-            "lecture seule la RAM, le CPU, le disque et le temps de fonctionnement du PC, lire "
-            "ou écrire du texte dans le presse-papiers sur demande, lister ou activer un onglet "
-            "Edge via le pont local, et travailler de façon contrôlée dans Bureau, Documents, "
-            "Téléchargements, Images, Vidéos et Musique. Je peux aussi retenir temporairement "
-            "un fichier trouvé pour comprendre ensuite « ouvre-le » ou « lis-le »."
+            "Je peux gérer les applications et fenêtres autorisées, ouvrir des sites, lancer tes routines, "
+            "travailler de façon contrôlée dans tes dossiers autorisés, lire ou manipuler des fichiers selon "
+            "les permissions, faire des recherches locales avancées par type, date ou taille sans lire le contenu, "
+            "consulter l'état du PC, la batterie et le réseau local, vérifier la vitesse de liaison ou l'activité réseau sans test Internet externe, lire ou régler explicitement le volume principal et le mode muet, faire une capture d'écran explicite enregistrée localement dans Images, "
+            "utiliser le presse-papiers sur demande et interagir avec les onglets Edge via le pont local. "
+            "Tu peux me parler naturellement ; si une demande est ambiguë, "
+            "je te demanderai de préciser au lieu de décider à ta place."
         )
 
-    if text in {"qui es tu", "qui es-tu", "c'est quoi agentlocal", "tu es qui"}:
+    if text in {"qui es tu", "qui es-tu", "c'est quoi agentlocal", "tu es qui", "agentlocal c'est quoi"}:
         return (
-            "Je suis AgentLocal, ton agent local sur ce PC. Je fonctionne avec des actions "
-            "autorisées à l'avance et je n'exécute pas de commande système arbitraire."
+            "Je suis AgentLocal, ton assistant local sur ce PC. Je comprends des demandes naturelles, "
+            "mais chaque action reste soumise aux permissions et aux règles de sécurité du projet."
+        )
+
+    if text in {
+        "pourquoi tu refuses", "pourquoi tu refuses ca", "pourquoi tu bloques",
+        "pourquoi tu ne fais pas", "pourquoi tu n executes pas", "pourquoi tu n'execute pas",
+    }:
+        return (
+            "Je refuse lorsqu'une action est interdite, trop vague ou en dehors des permissions actuelles. "
+            "Donne-moi la commande précise et je pourrai t'indiquer comment la reformuler sans contourner les protections."
         )
 
     return None
@@ -5422,6 +6259,26 @@ def interpret(user_message):
     # d'un nom de fichier. Le contenu litteral des commandes d'ecriture reste
     # toujours intact.
     original_message = str(user_message or "").strip()
+
+    # « note » seul est volontairement ambigu : ne jamais l'inventer comme
+    # note.com et ne pas choisir entre Bloc-notes / OneNote à la place de
+    # l'utilisateur. Le contexte explicite « le fichier note » reste valable.
+    note_request = normalize_text(original_message).replace("-", " ").strip(" .!?")
+    if note_request in {
+        "ouvre note", "ouvre notes", "lance note", "lance notes",
+        "ouvre mes notes", "lance mes notes",
+    }:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "backend": "deterministic",
+            "understood": True,
+            "actions": [],
+            "reply": (
+                "Tu veux ouvrir Bloc-notes pour une note rapide ou OneNote pour tes notes organisées ? "
+                "Dis simplement « ouvre Bloc-notes » ou « ouvre OneNote »."
+            ),
+            "conversation": True,
+        }
 
     if _is_clipboard_execution_request(original_message):
         return {

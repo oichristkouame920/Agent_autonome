@@ -4751,6 +4751,7 @@ def main():
 # ============================================================
 
 from recursive_file_tools import (
+    advanced_search_files as recursive_advanced_search_files,
     copy_file_between_roots as recursive_copy_file_between_roots,
     create_file_with_content as recursive_create_file_with_content,
     create_folder as recursive_create_folder,
@@ -4800,6 +4801,7 @@ RECURSIVE_FILE_ACTIONS = {
     "open_directory_auto",
     "open_file",
     "open_file_auto",
+    "advanced_file_search",
 }
 
 SUPPORTED_ACTIONS.update(
@@ -4812,6 +4814,7 @@ SUPPORTED_ACTIONS.update(
         "open_directory_auto",
         "open_file",
         "open_file_auto",
+        "advanced_file_search",
     }
 )
 
@@ -4825,6 +4828,7 @@ FILE_ACTIONS_REQUIRING_EXPLICIT_PROOF.update(
         "open_directory_auto",
         "open_file",
         "open_file_auto",
+        "advanced_file_search",
     }
 )
 
@@ -4903,10 +4907,11 @@ def _validate_recursive_file_action(action_data):
         "read_file_auto",
         "open_directory_auto",
         "open_file_auto",
+        "advanced_file_search",
     }
 
     if action in auto_actions:
-        if action == "find_filesystem_item":
+        if action in {"find_filesystem_item", "advanced_file_search"}:
             if target != "auto" and target not in ALLOWED_FILE_ROOTS:
                 return False, "Racine de recherche invalide."
         elif target != "auto":
@@ -4931,6 +4936,39 @@ def _validate_recursive_file_action(action_data):
         root_name = params.get("root_name")
         if root_name is not None and str(root_name).strip().lower() not in ALLOWED_FILE_ROOTS:
             return False, "Racine de recherche invalide."
+
+    elif action == "advanced_file_search":
+        expected = {
+            "file_kind", "date_filter", "date_field", "size_operator",
+            "size_bytes", "sort", "limit", "count_only",
+        }
+        if set(params) != expected:
+            return False, "Paramètres de recherche avancée invalides."
+        if str(params.get("file_kind", "")).strip().lower() not in {
+            "any", "pdf", "word", "excel", "powerpoint", "image", "video", "audio", "text"
+        }:
+            return False, "Type de fichier de recherche invalide."
+        if str(params.get("date_filter", "")).strip().lower() not in {
+            "any", "today", "yesterday", "this_week", "last_7_days"
+        }:
+            return False, "Filtre de date invalide."
+        if str(params.get("date_field", "")).strip().lower() not in {"modified", "created"}:
+            return False, "Champ de date invalide."
+        if str(params.get("size_operator", "")).strip().lower() not in {"any", "gt", "lt"}:
+            return False, "Filtre de taille invalide."
+        if str(params.get("sort", "")).strip().lower() not in {
+            "modified_desc", "created_desc", "size_desc", "name_asc"
+        }:
+            return False, "Tri de recherche invalide."
+        size_bytes = params.get("size_bytes")
+        limit = params.get("limit")
+        count_only = params.get("count_only")
+        if isinstance(size_bytes, bool) or not isinstance(size_bytes, int) or size_bytes < 0 or size_bytes > 10 * 1024**4:
+            return False, "Taille de recherche invalide."
+        if isinstance(limit, bool) or not isinstance(limit, int) or not (1 <= limit <= 20):
+            return False, "Limite de résultats invalide."
+        if not isinstance(count_only, bool):
+            return False, "Mode de comptage invalide."
 
     elif action == "create_folder":
         if not _contract_relative_path_ok(params.get("name")):
@@ -5094,6 +5132,21 @@ def execute_action(action_data, user_message=None):
             source="manual",
         )
 
+    if action == "advanced_file_search":
+        return recursive_advanced_search_files(
+            root_name=None if target == "auto" else target,
+            file_kind=params["file_kind"],
+            date_filter=params["date_filter"],
+            date_field=params["date_field"],
+            size_operator=params["size_operator"],
+            size_bytes=params["size_bytes"],
+            sort=params["sort"],
+            limit=params["limit"],
+            count_only=params["count_only"],
+            explicit_user_command=True,
+            source="manual",
+        )
+
     if action == "list_directory":
         return recursive_list_directory(
             target,
@@ -5244,13 +5297,22 @@ def execute_action(action_data, user_message=None):
 
 from controlled_local_tools import (
     activate_browser_tab as controlled_activate_browser_tab,
+    check_browser_site_open as controlled_check_browser_site_open,
     copy_file_path as controlled_copy_file_path,
     copy_last_reference_path as controlled_copy_last_reference_path,
     list_browser_tabs as controlled_list_browser_tabs,
+    open_browser_site_existing_window as controlled_open_browser_site_existing_window,
     open_last_reference as controlled_open_last_reference,
     read_clipboard_text as controlled_read_clipboard_text,
     read_last_reference as controlled_read_last_reference,
     read_system_info as controlled_read_system_info,
+    read_power_info as controlled_read_power_info,
+    read_network_info as controlled_read_network_info,
+    read_audio_state as controlled_read_audio_state,
+    set_audio_volume as controlled_set_audio_volume,
+    change_audio_volume as controlled_change_audio_volume,
+    set_audio_mute as controlled_set_audio_mute,
+    take_screenshot as controlled_take_screenshot,
     validate_controlled_action_policy,
     write_clipboard_text as controlled_write_clipboard_text,
 )
@@ -5260,14 +5322,23 @@ from session_context import clear_session_context, set_last_reference
 
 CONTROLLED_LOCAL_ACTIONS = {
     "read_system_info",
+    "read_power_info",
+    "read_network_info",
     "read_clipboard",
     "write_clipboard",
     "copy_file_path",
     "list_browser_tabs",
     "activate_browser_tab",
+    "check_browser_site",
+    "open_browser_site_existing_edge",
     "open_last_reference",
     "read_last_reference",
     "copy_last_reference_path",
+    "take_screenshot",
+    "read_audio_state",
+    "set_audio_volume",
+    "change_audio_volume",
+    "set_audio_mute",
 }
 
 SUPPORTED_ACTIONS.update(CONTROLLED_LOCAL_ACTIONS)
@@ -5292,12 +5363,18 @@ def _validate_controlled_local_contract(action_data):
 
     no_params_actions = {
         "read_system_info",
+        "read_power_info",
+        "read_network_info",
         "read_clipboard",
         "list_browser_tabs",
         "activate_browser_tab",
+        "check_browser_site",
+        "open_browser_site_existing_edge",
         "open_last_reference",
         "read_last_reference",
         "copy_last_reference_path",
+        "take_screenshot",
+        "read_audio_state",
     }
     if action in no_params_actions and params not in (None, {}):
         return False, "Paramètres supplémentaires interdits pour cette action."
@@ -5305,6 +5382,14 @@ def _validate_controlled_local_contract(action_data):
     if action == "read_system_info":
         if target not in {"memory", "disk", "cpu", "uptime", "summary"}:
             return False, "Information système non autorisée."
+
+    elif action == "read_power_info":
+        if target not in {"battery", "power"}:
+            return False, "Information d'alimentation non autorisée."
+
+    elif action == "read_network_info":
+        if target not in {"status", "local_ip", "interfaces", "link_speed", "traffic_speed", "internet_speed"}:
+            return False, "Information réseau non autorisée."
 
     elif action == "read_clipboard":
         if target != "clipboard":
@@ -5331,15 +5416,43 @@ def _validate_controlled_local_contract(action_data):
         if target != "edge":
             return False, "Seuls les onglets Edge sont autorisés."
 
-    elif action == "activate_browser_tab":
+    elif action in {"activate_browser_tab", "check_browser_site", "open_browser_site_existing_edge"}:
         if not target or len(target) > 120:
-            return False, "Cible d'onglet invalide."
+            return False, "Cible web invalide."
         if any(token in target for token in ("\\", "/", ":", "*", "?", "\x00")):
-            return False, "Cible d'onglet invalide."
+            return False, "Cible web invalide."
 
     elif action in {"open_last_reference", "read_last_reference", "copy_last_reference_path"}:
         if target != "session":
             return False, "Cible de mémoire de session invalide."
+
+    elif action == "take_screenshot":
+        if target not in {"full_screen", "active_window"}:
+            return False, "Mode de capture d'écran non autorisé."
+
+    elif action == "read_audio_state":
+        if target != "master":
+            return False, "Cible audio invalide."
+
+    elif action == "set_audio_volume":
+        if target != "master" or not isinstance(params, dict) or set(params) != {"percent"}:
+            return False, "Contrat de volume invalide."
+        percent = params.get("percent")
+        if isinstance(percent, bool) or not isinstance(percent, int) or not 0 <= percent <= 100:
+            return False, "Pourcentage de volume invalide."
+
+    elif action == "change_audio_volume":
+        if target != "master" or not isinstance(params, dict) or set(params) != {"delta"}:
+            return False, "Contrat de variation audio invalide."
+        delta = params.get("delta")
+        if isinstance(delta, bool) or not isinstance(delta, int) or delta == 0 or abs(delta) > 25:
+            return False, "Variation de volume invalide ou trop importante."
+
+    elif action == "set_audio_mute":
+        if target != "master" or not isinstance(params, dict) or set(params) != {"muted"}:
+            return False, "Contrat du mode muet invalide."
+        if not isinstance(params.get("muted"), bool):
+            return False, "État du mode muet invalide."
 
     return True, None
 
@@ -5486,6 +5599,14 @@ def execute_action(action_data, user_message=None):
         return controlled_read_system_info(
             target, explicit_user_command=True, source="manual"
         )
+    if action == "read_power_info":
+        return controlled_read_power_info(
+            target, explicit_user_command=True, source="manual"
+        )
+    if action == "read_network_info":
+        return controlled_read_network_info(
+            target, explicit_user_command=True, source="manual"
+        )
     if action == "read_clipboard":
         return controlled_read_clipboard_text(
             explicit_user_command=True, source="manual"
@@ -5506,6 +5627,14 @@ def execute_action(action_data, user_message=None):
         return controlled_activate_browser_tab(
             target, explicit_user_command=True, source="manual"
         )
+    if action == "check_browser_site":
+        return controlled_check_browser_site_open(
+            target, explicit_user_command=True, source="manual"
+        )
+    if action == "open_browser_site_existing_edge":
+        return controlled_open_browser_site_existing_window(
+            target, explicit_user_command=True, source="manual"
+        )
     if action == "open_last_reference":
         return controlled_open_last_reference(
             explicit_user_command=True, source="manual"
@@ -5517,6 +5646,26 @@ def execute_action(action_data, user_message=None):
     if action == "copy_last_reference_path":
         return controlled_copy_last_reference_path(
             explicit_user_command=True, source="manual"
+        )
+    if action == "take_screenshot":
+        return controlled_take_screenshot(
+            target, explicit_user_command=True, source="manual"
+        )
+    if action == "read_audio_state":
+        return controlled_read_audio_state(
+            explicit_user_command=True, source="manual"
+        )
+    if action == "set_audio_volume":
+        return controlled_set_audio_volume(
+            params["percent"], explicit_user_command=True, source="manual"
+        )
+    if action == "change_audio_volume":
+        return controlled_change_audio_volume(
+            params["delta"], explicit_user_command=True, source="manual"
+        )
+    if action == "set_audio_mute":
+        return controlled_set_audio_mute(
+            params["muted"], explicit_user_command=True, source="manual"
         )
 
     return False, "Action locale contrôlée non implémentée."

@@ -2,6 +2,7 @@ import os
 import re
 import shutil
 import unicodedata
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import file_tools as base
@@ -32,6 +33,39 @@ def get_recursive_access_policy():
         .get("recursive_access_policy", {})
     )
     return policy if isinstance(policy, dict) else {}
+
+
+def get_advanced_search_policy():
+    policy = (
+        base.get_filesystem_config()
+        .get("advanced_search_policy", {})
+    )
+    return policy if isinstance(policy, dict) else {}
+
+
+ADVANCED_FILE_KIND_EXTENSIONS = {
+    "any": None,
+    "pdf": {".pdf"},
+    "word": {".doc", ".docx", ".odt", ".rtf"},
+    "excel": {".xls", ".xlsx", ".ods", ".csv", ".tsv"},
+    "powerpoint": {".ppt", ".pptx", ".odp"},
+    "image": {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff"},
+    "video": {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m4v"},
+    "audio": {".mp3", ".wav", ".flac", ".m4a", ".aac", ".ogg", ".wma"},
+    "text": {".txt", ".md", ".log", ".json", ".xml", ".yaml", ".yml", ".ini", ".cfg", ".conf", ".toml"},
+}
+
+ADVANCED_FILE_KIND_LABELS = {
+    "any": "fichiers",
+    "pdf": "PDF",
+    "word": "fichiers Word",
+    "excel": "fichiers Excel",
+    "powerpoint": "présentations",
+    "image": "images",
+    "video": "vidéos",
+    "audio": "fichiers audio",
+    "text": "fichiers texte",
+}
 
 
 def _positive_bounded_int(value, default, hard_max):
@@ -849,6 +883,277 @@ def find_filesystem_item(name, root_name=None, item_type="any", explicit_user_co
 
     if limited:
         lines.append("- Recherche arrêtée à la limite de sécurité configurée.")
+
+    return True, "\n".join(lines)
+
+
+# ============================================================
+# RECHERCHE LOCALE AVANCEE - LECTURE SEULE
+# ============================================================
+
+def _advanced_search_policy_check(explicit_user_command=False, source="manual"):
+    policy = get_advanced_search_policy()
+    if not base.is_filesystem_enabled():
+        return False, "L'accès fichiers est désactivé."
+    if not policy.get("enabled", False):
+        return False, "La recherche locale avancée est désactivée."
+    if not policy.get("read_only", False) or not policy.get("metadata_only", False):
+        return False, "Configuration de recherche avancée non sûre."
+    if str(source).strip().lower() != "manual":
+        return False, "La recherche locale avancée est réservée aux commandes manuelles explicites."
+    if policy.get("require_explicit_user_command", True) and not explicit_user_command:
+        return False, "La recherche locale avancée nécessite une commande explicite de l'utilisateur."
+    if policy.get("allow_from_routine", False) or policy.get("allow_from_habit", False):
+        return False, "Configuration dangereuse détectée : routines et habitudes doivent rester désactivées."
+    if policy.get("allow_automatic_search", False):
+        return False, "Configuration dangereuse détectée : la recherche automatique doit rester désactivée."
+    if not _policy_allows_recursive_access():
+        return False, "L'accès récursif contrôlé est désactivé."
+    return True, None
+
+
+def _advanced_search_date_matches(timestamp, date_filter, now):
+    if date_filter == "any":
+        return True
+    try:
+        value = datetime.fromtimestamp(timestamp)
+    except (OSError, OverflowError, ValueError):
+        return False
+
+    today = now.date()
+    if date_filter == "today":
+        return value.date() == today
+    if date_filter == "yesterday":
+        return value.date() == (today - timedelta(days=1))
+    if date_filter == "this_week":
+        monday = today - timedelta(days=today.weekday())
+        return monday <= value.date() <= today
+    if date_filter == "last_7_days":
+        return value >= (now - timedelta(days=7))
+    return False
+
+
+def _advanced_search_kind_matches(file_name, file_kind):
+    extensions = ADVANCED_FILE_KIND_EXTENSIONS.get(file_kind)
+    if extensions is None:
+        return file_kind == "any"
+    return Path(file_name).suffix.casefold() in extensions
+
+
+def _format_advanced_search_timestamp(timestamp):
+    try:
+        return datetime.fromtimestamp(timestamp).strftime("%d/%m/%Y %H:%M")
+    except (OSError, OverflowError, ValueError):
+        return "date inconnue"
+
+
+def advanced_search_files(
+    root_name=None,
+    file_kind="any",
+    date_filter="any",
+    date_field="modified",
+    size_operator="any",
+    size_bytes=0,
+    sort="modified_desc",
+    limit=10,
+    count_only=False,
+    explicit_user_command=False,
+    source="manual",
+):
+    """Recherche des fichiers uniquement par métadonnées.
+
+    Aucun contenu n'est ouvert ni indexé. La recherche reste enfermée dans les
+    six racines utilisateur autorisées et reprend les limites de profondeur et
+    de nombre d'entrées de la politique récursive existante.
+    """
+    ok, error = _advanced_search_policy_check(explicit_user_command, source)
+    if not ok:
+        return False, error
+
+    policy = get_advanced_search_policy()
+    file_kind = str(file_kind or "any").strip().lower()
+    date_filter = str(date_filter or "any").strip().lower()
+    date_field = str(date_field or "modified").strip().lower()
+    size_operator = str(size_operator or "any").strip().lower()
+    sort = str(sort or "modified_desc").strip().lower()
+
+    allowed_roots = policy.get("allowed_roots", list(DEFAULT_SEARCH_ROOTS))
+    allowed_roots = [r for r in allowed_roots if r in DEFAULT_SEARCH_ROOTS]
+    roots = [str(root_name).strip().lower()] if root_name else list(allowed_roots)
+
+    if not roots or any(root not in allowed_roots for root in roots):
+        return False, "Racine de recherche non autorisée."
+    if file_kind not in policy.get("allowed_file_kinds", list(ADVANCED_FILE_KIND_EXTENSIONS)):
+        return False, "Type de fichier non autorisé pour cette recherche."
+    if date_filter not in policy.get("allowed_date_filters", ["any", "today", "yesterday", "this_week", "last_7_days"]):
+        return False, "Filtre de date non autorisé."
+    if date_field not in policy.get("allowed_date_fields", ["modified", "created"]):
+        return False, "Champ de date non autorisé."
+    if size_operator not in policy.get("allowed_size_operators", ["any", "gt", "lt"]):
+        return False, "Filtre de taille non autorisé."
+    if sort not in policy.get("allowed_sorts", ["modified_desc", "created_desc", "size_desc", "name_asc"]):
+        return False, "Tri non autorisé."
+
+    try:
+        size_bytes = int(size_bytes or 0)
+        limit = int(limit or 10)
+    except (TypeError, ValueError):
+        return False, "Paramètres numériques invalides."
+
+    if size_bytes < 0 or size_bytes > 10 * 1024**4:
+        return False, "Taille de filtre invalide."
+
+    _, recursive_max_entries, recursive_max_results = _recursive_limits()
+    configured_entries = _positive_bounded_int(
+        policy.get("maximum_search_entries", recursive_max_entries),
+        recursive_max_entries,
+        recursive_max_entries,
+    )
+    configured_results = _positive_bounded_int(
+        policy.get("maximum_results", recursive_max_results),
+        recursive_max_results,
+        recursive_max_results,
+    )
+    max_depth = _positive_bounded_int(
+        policy.get("maximum_depth", _recursive_limits()[0]),
+        _recursive_limits()[0],
+        _recursive_limits()[0],
+    )
+    limit = max(1, min(limit, configured_results))
+
+    now = datetime.now()
+    scanned = 0
+    limit_reached = False
+    matched_count = 0
+    candidates = []
+
+    for root in roots:
+        if not base.get_root_permissions(root).get("enabled", False):
+            continue
+        if not base.has_root_permission(root, "can_read_metadata"):
+            continue
+
+        root_path, root_error = _root_path(root)
+        if root_path is None:
+            continue
+
+        stack = [(root_path, 0)]
+        while stack:
+            current, depth = stack.pop()
+            if depth > max_depth:
+                continue
+
+            try:
+                with os.scandir(current) as entries:
+                    for entry in entries:
+                        scanned += 1
+                        if scanned > configured_entries:
+                            limit_reached = True
+                            stack.clear()
+                            break
+
+                        path = Path(entry.path)
+                        try:
+                            if base.is_hard_protected_path(path):
+                                continue
+                            if base.is_reparse_point(path):
+                                continue
+                            if base.is_hidden_or_system(path):
+                                continue
+
+                            is_dir = entry.is_dir(follow_symlinks=False)
+                            is_file = entry.is_file(follow_symlinks=False)
+                        except OSError:
+                            continue
+
+                        if is_dir:
+                            if depth < max_depth:
+                                stack.append((path, depth + 1))
+                            continue
+                        if not is_file:
+                            continue
+                        if not _advanced_search_kind_matches(entry.name, file_kind):
+                            continue
+
+                        try:
+                            stat = entry.stat(follow_symlinks=False)
+                        except OSError:
+                            continue
+
+                        timestamp = stat.st_mtime if date_field == "modified" else stat.st_ctime
+                        if not _advanced_search_date_matches(timestamp, date_filter, now):
+                            continue
+                        if size_operator == "gt" and not (stat.st_size > size_bytes):
+                            continue
+                        if size_operator == "lt" and not (stat.st_size < size_bytes):
+                            continue
+
+                        matched_count += 1
+                        if not count_only:
+                            candidates.append({
+                                "root": root,
+                                "path": path,
+                                "size": stat.st_size,
+                                "modified": stat.st_mtime,
+                                "created": stat.st_ctime,
+                                "protected": bool(base.is_blocked_file_type(entry.name)),
+                            })
+            except (OSError, PermissionError):
+                continue
+
+            if limit_reached:
+                break
+        if limit_reached:
+            break
+
+    kind_label = ADVANCED_FILE_KIND_LABELS.get(file_kind, "fichiers")
+    root_label = (
+        base.DISPLAY_NAMES.get(roots[0], roots[0])
+        if len(roots) == 1
+        else "les dossiers utilisateur autorisés"
+    )
+
+    if count_only:
+        if limit_reached:
+            return True, (
+                f"J'ai trouvé {matched_count} {kind_label} correspondant(s) dans {root_label} "
+                "avant d'atteindre la limite de sécurité. Le total réel peut être supérieur."
+            )
+        return True, f"J'ai trouvé {matched_count} {kind_label} correspondant(s) dans {root_label}."
+
+    if not candidates:
+        suffix = " La limite de sécurité a été atteinte pendant la recherche." if limit_reached else ""
+        return True, f"Aucun {kind_label} correspondant n'a été trouvé dans {root_label}.{suffix}"
+
+    if sort == "modified_desc":
+        candidates.sort(key=lambda item: item["modified"], reverse=True)
+    elif sort == "created_desc":
+        candidates.sort(key=lambda item: item["created"], reverse=True)
+    elif sort == "size_desc":
+        candidates.sort(key=lambda item: item["size"], reverse=True)
+    else:
+        candidates.sort(key=lambda item: item["path"].name.casefold())
+
+    shown = candidates[:limit]
+    lines = [
+        f"J'ai trouvé {matched_count} {kind_label} correspondant(s) dans {root_label}. "
+        f"Voici {len(shown)} résultat(s) :"
+    ]
+    for index, item in enumerate(shown, start=1):
+        date_key = "created" if date_field == "created" else "modified"
+        date_label = "créé" if date_field == "created" else "modifié"
+        line = (
+            f"{index}. {relative_display(item['root'], item['path'])} | "
+            f"{base.format_size(item['size'])} | {date_label} {_format_advanced_search_timestamp(item[date_key])}"
+        )
+        if item["protected"]:
+            line += " | type protégé (affichage des métadonnées uniquement)"
+        lines.append(line)
+
+    if matched_count > len(shown):
+        lines.append(f"- {matched_count - len(shown)} autre(s) résultat(s) non affiché(s).")
+    if limit_reached:
+        lines.append("- Recherche arrêtée à la limite de sécurité configurée ; d'autres résultats peuvent exister.")
 
     return True, "\n".join(lines)
 
