@@ -1164,5 +1164,82 @@
     "allow_from_routine": false,
     "allow_from_habit": false,
     "allow_automatic_query": false
+  },
+  "archive_policy": {
+    "enabled": true,
+    "require_explicit_user_command": true,
+    "allowed_operations": [
+      "create_zip",
+      "extract_zip"
+    ],
+    "allowed_roots": [
+      "desktop",
+      "documents",
+      "downloads",
+      "pictures",
+      "videos",
+      "music"
+    ],
+    "maximum_source_items": 2000,
+    "maximum_source_bytes": 1073741824,
+    "maximum_archive_members": 2000,
+    "maximum_archive_bytes": 1073741824,
+    "maximum_uncompressed_bytes": 2147483648,
+    "maximum_archive_depth": 10,
+    "maximum_compression_ratio": 200.0,
+    "allow_overwrite": false,
+    "allow_encrypted_archives": false,
+    "allow_symlinks": false,
+    "allow_blocked_file_types": false,
+    "allow_from_routine": false,
+    "allow_from_habit": false,
+    "allow_automatic_action": false
+  },
+  "file_undo_policy": {
+    "enabled": true,
+    "require_explicit_user_command": true,
+    "allowed_operations": [
+      "rename",
+      "move",
+      "copy"
+    ],
+    "single_level": true,
+    "maximum_age_seconds": 900,
+    "copy_undo_mode": "recycle_bin",
+    "allow_from_routine": false,
+    "allow_from_habit": false,
+    "allow_automatic_action": false
+  },
+  "file_analysis_policy": {
+    "enabled": true,
+    "read_only": true,
+    "require_explicit_user_command": true,
+    "allowed_operations": [
+      "metadata",
+      "sha256",
+      "compare",
+      "find_duplicates"
+    ],
+    "allowed_roots": [
+      "desktop",
+      "documents",
+      "downloads",
+      "pictures",
+      "videos",
+      "music"
+    ],
+    "allow_metadata": true,
+    "allow_sha256": true,
+    "allow_compare": true,
+    "allow_duplicate_search": true,
+    "allow_hash_blocked_file_types": false,
+    "maximum_hash_file_bytes": 536870912,
+    "maximum_duplicate_depth": 10,
+    "maximum_duplicate_entries": 4000,
+    "maximum_total_hash_bytes": 2147483648,
+    "maximum_duplicate_groups": 20,
+    "allow_from_routine": false,
+    "allow_from_habit": false,
+    "allow_automatic_action": false
   }
 }

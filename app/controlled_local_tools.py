@@ -12,6 +12,7 @@ Principes :
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import json
 import os
 import platform
@@ -21,9 +22,11 @@ import struct
 import time
 import uuid
 import zlib
+import stat
+import zipfile
 from datetime import datetime
 from ctypes import wintypes
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -35,8 +38,22 @@ except Exception:  # pragma: no cover - secours si environnement incomplet
     psutil = None
 
 from browser_bridge import activate_site_via_bridge, list_tabs_via_bridge, open_site_via_bridge
-from file_tools import DISPLAY_NAMES, is_blocked_file_type, resolve_allowed_root
-from recursive_file_tools import get_unique_reference_for_context
+import file_tools as base_file_tools
+from file_tools import (
+    DISPLAY_NAMES,
+    is_blocked_file_type,
+    resolve_allowed_root,
+    validate_file_name,
+    validate_folder_name,
+)
+from recursive_file_tools import (
+    get_unique_reference_for_context,
+    relative_display,
+    resolve_existing_directory,
+    resolve_existing_inside_root,
+    resolve_new_leaf_inside_root,
+    undo_last_file_action as recursive_undo_last_file_action,
+)
 from session_context import get_last_reference
 from web_tools import resolve_site
 
@@ -1341,6 +1358,584 @@ def take_screenshot(mode: str, explicit_user_command=False, source="manual"):
     return True, f"Capture enregistrée : {display_path}"
 
 
+
+# ============================================================
+# ARCHIVES ZIP CONTROLEES
+# ============================================================
+
+def _archive_policy_check(explicit_user_command=False, source="manual"):
+    return _manual_only_check("archive_policy", explicit_user_command, source)
+
+
+def _archive_allowed_root(policy, root_name):
+    allowed = {str(v).strip().lower() for v in policy.get("allowed_roots", [])}
+    return str(root_name or "").strip().lower() in allowed
+
+
+def _archive_safe_source_entries(root_name, source_path, policy):
+    """Retourne (ok, entries, total_bytes/error).
+
+    entries contient des tuples (path, arcname, is_dir). Les reparse points,
+    liens, fichiers protégés et sorties de racine sont refusés au lieu d'être
+    ignorés silencieusement.
+    """
+    max_items = max(1, min(int(policy.get("maximum_source_items", 2000)), 10000))
+    max_bytes = max(1, min(int(policy.get("maximum_source_bytes", 1073741824)), 5 * 1024**3))
+    max_depth = max(1, min(int(policy.get("maximum_archive_depth", 10)), 20))
+
+    entries = []
+    total_bytes = 0
+
+    def add_file(path, arcname):
+        nonlocal total_bytes
+        if is_blocked_file_type(path.name):
+            return False, f"Le type de fichier '{path.suffix.lower()}' est protégé et ne peut pas être archivé."
+        try:
+            size = int(path.stat().st_size)
+        except OSError:
+            return False, f"Impossible de lire '{path.name}'."
+        total_bytes += size
+        if total_bytes > max_bytes:
+            return False, "La taille totale à compresser dépasse la limite locale autorisée."
+        entries.append((path, arcname, False))
+        if len(entries) > max_items:
+            return False, "Le nombre d'éléments à compresser dépasse la limite locale autorisée."
+        return True, None
+
+    if source_path.is_file():
+        ok, err = add_file(source_path, source_path.name)
+        if not ok:
+            return False, err, None
+        return True, entries, total_bytes
+
+    source_root = source_path
+    base_name = source_root.name
+    entries.append((source_root, base_name + "/", True))
+
+    for current_dir, dirnames, filenames in os.walk(source_root, topdown=True, followlinks=False):
+        current = Path(current_dir)
+        try:
+            current_rel = current.relative_to(source_root)
+        except ValueError:
+            return False, "Un chemin du dossier à compresser sort de la source autorisée.", None
+
+        if len(current_rel.parts) > max_depth:
+            return False, "Le dossier à compresser dépasse la profondeur maximale autorisée.", None
+
+        safe_dirs = []
+        for dirname in list(dirnames):
+            candidate = current / dirname
+            try:
+                rel_to_allowed = candidate.relative_to(resolve_allowed_root(root_name))
+            except Exception:
+                return False, "Un sous-dossier sort de la racine autorisée.", None
+            ok, resolved = resolve_existing_inside_root(root_name, str(rel_to_allowed), expected="dir")
+            if not ok:
+                return False, str(resolved), None
+            safe_dirs.append(dirname)
+            arc = PurePosixPath(base_name, *(current_rel.parts + (dirname,))).as_posix() + "/"
+            entries.append((resolved, arc, True))
+            if len(entries) > max_items:
+                return False, "Le nombre d'éléments à compresser dépasse la limite locale autorisée.", None
+        dirnames[:] = safe_dirs
+
+        for filename in filenames:
+            candidate = current / filename
+            try:
+                rel_to_allowed = candidate.relative_to(resolve_allowed_root(root_name))
+            except Exception:
+                return False, "Un fichier sort de la racine autorisée.", None
+            ok, resolved = resolve_existing_inside_root(root_name, str(rel_to_allowed), expected="file")
+            if not ok:
+                return False, str(resolved), None
+            arc = PurePosixPath(base_name, *(current_rel.parts + (filename,))).as_posix()
+            ok, err = add_file(resolved, arc)
+            if not ok:
+                return False, err, None
+
+    return True, entries, total_bytes
+
+
+def create_zip_archive(root_name: str, source_name: str, archive_name: str,
+                       explicit_user_command=False, source="manual"):
+    ok, policy, error = _archive_policy_check(explicit_user_command, source)
+    if not ok:
+        return False, error
+    if not _archive_allowed_root(policy, root_name):
+        return False, "Cette racine n'est pas autorisée pour les archives."
+
+    archive_name = str(archive_name or "").strip()
+    if not archive_name.lower().endswith(".zip"):
+        return False, "Le nom de l'archive doit se terminer par .zip."
+    if "\\" in archive_name or "/" in archive_name:
+        return False, "Le ZIP doit être créé directement dans la racine autorisée."
+
+    ok, source_path = resolve_existing_inside_root(root_name, source_name, expected="any")
+    if not ok:
+        return False, source_path
+
+    ok, destination = resolve_new_leaf_inside_root(root_name, archive_name, leaf_kind="file")
+    if not ok:
+        return False, destination
+
+    ok, entries_or_error, total_bytes = _archive_safe_source_entries(root_name, source_path, policy)
+    if not ok:
+        return False, entries_or_error
+    entries = entries_or_error
+
+    compression = zipfile.ZIP_DEFLATED
+    try:
+        with zipfile.ZipFile(destination, mode="x", compression=compression, compresslevel=6, allowZip64=True) as archive:
+            for path, arcname, is_dir in entries:
+                if is_dir:
+                    info = zipfile.ZipInfo(arcname)
+                    info.external_attr = (0o40755 & 0xFFFF) << 16
+                    archive.writestr(info, b"")
+                else:
+                    archive.write(path, arcname=arcname)
+    except Exception:
+        try:
+            if destination.exists():
+                destination.unlink()
+        except OSError:
+            pass
+        return False, "La création du ZIP a échoué. Aucun écrasement n'a été effectué."
+
+    return True, (
+        f"Archive créée : {relative_display(root_name, destination)} "
+        f"({len(entries)} élément(s), {_format_bytes(total_bytes)} avant compression)."
+    )
+
+
+def _zip_member_is_symlink(info):
+    mode = (int(info.external_attr) >> 16) & 0xFFFF
+    return bool(mode and stat.S_ISLNK(mode))
+
+
+def _validate_zip_members(archive, destination_root, root_name, policy):
+    max_members = max(1, min(int(policy.get("maximum_archive_members", 2000)), 10000))
+    max_uncompressed = max(1, min(int(policy.get("maximum_uncompressed_bytes", 2147483648)), 5 * 1024**3))
+    max_archive_bytes = max(1, min(int(policy.get("maximum_archive_bytes", 1073741824)), 5 * 1024**3))
+    max_depth = max(1, min(int(policy.get("maximum_archive_depth", 10)), 20))
+    max_ratio = max(1.0, min(float(policy.get("maximum_compression_ratio", 200.0)), 1000.0))
+
+    try:
+        if archive.fp is not None:
+            archive_size = Path(archive.filename).stat().st_size
+            if archive_size > max_archive_bytes:
+                return False, "Le ZIP dépasse la taille maximale autorisée.", None
+    except OSError:
+        return False, "Impossible de vérifier la taille du ZIP.", None
+
+    infos = archive.infolist()
+    if len(infos) > max_members:
+        return False, "Le ZIP contient trop d'éléments.", None
+
+    total = 0
+    seen = set()
+    plan = []
+    allowed_root = resolve_allowed_root(root_name)
+
+    for info in infos:
+        if info.flag_bits & 0x1:
+            return False, "Les ZIP chiffrés ou protégés par mot de passe ne sont pas autorisés.", None
+        if _zip_member_is_symlink(info):
+            return False, "Les liens symboliques contenus dans un ZIP ne sont pas autorisés.", None
+
+        raw_name = str(info.filename or "").replace("\\", "/")
+        if not raw_name or raw_name.startswith("/") or "\x00" in raw_name:
+            return False, "Le ZIP contient un chemin invalide.", None
+        pure = PurePosixPath(raw_name)
+        parts = [part for part in pure.parts if part not in ("", ".")]
+        if not parts or any(part == ".." for part in parts):
+            return False, "Le ZIP contient une tentative de sortie de dossier.", None
+        if any(":" in part or any(ch in part for ch in '<>"|?*') for part in parts):
+            return False, "Le ZIP contient un nom de fichier interdit sous Windows.", None
+        if any(part.endswith((" ", ".")) for part in parts):
+            return False, "Le ZIP contient un nom incompatible avec Windows.", None
+        is_dir = info.is_dir() or raw_name.endswith("/")
+        for index, part in enumerate(parts):
+            validator = validate_folder_name if (is_dir or index < len(parts) - 1) else validate_file_name
+            valid_name, name_error = validator(part)
+            if not valid_name:
+                return False, str(name_error), None
+        if len(parts) > max_depth:
+            return False, "Le ZIP dépasse la profondeur maximale autorisée.", None
+
+        normalized_key = "/".join(parts).casefold()
+        if normalized_key in seen:
+            return False, "Le ZIP contient des chemins en doublon ou ambigus.", None
+        seen.add(normalized_key)
+
+        if not is_dir and is_blocked_file_type(parts[-1]):
+            return False, f"Le ZIP contient un type de fichier protégé : {Path(parts[-1]).suffix.lower()}."
+
+        if not is_dir:
+            total += int(info.file_size)
+            if total > max_uncompressed:
+                return False, "Le contenu décompressé dépasse la limite locale autorisée.", None
+            compressed = max(1, int(info.compress_size))
+            if int(info.file_size) > 1024 * 1024 and (float(info.file_size) / compressed) > max_ratio:
+                return False, "Le ZIP présente un taux de compression anormalement élevé.", None
+
+        target = destination_root.joinpath(*parts)
+        try:
+            candidate = target.resolve(strict=False)
+            allowed_resolved = Path(allowed_root).resolve(strict=True)
+            dest_resolved = destination_root.resolve(strict=True)
+            candidate.relative_to(allowed_resolved)
+            candidate.relative_to(dest_resolved)
+        except Exception:
+            return False, "Le ZIP tente d'écrire hors du dossier autorisé.", None
+        if os.path.lexists(str(target)):
+            return False, f"Extraction refusée : '{target.name}' existe déjà. Aucun écrasement n'est autorisé.", None
+        plan.append((info, target, is_dir))
+
+    return True, plan, total
+
+
+def extract_zip_archive(root_name: str, archive_name: str, destination_folder: str = "",
+                        explicit_user_command=False, source="manual"):
+    ok, policy, error = _archive_policy_check(explicit_user_command, source)
+    if not ok:
+        return False, error
+    if not _archive_allowed_root(policy, root_name):
+        return False, "Cette racine n'est pas autorisée pour les archives."
+
+    ok, archive_path = resolve_existing_inside_root(root_name, archive_name, expected="file")
+    if not ok:
+        return False, archive_path
+    if archive_path.suffix.lower() != ".zip" or not zipfile.is_zipfile(archive_path):
+        return False, "Le fichier demandé n'est pas un ZIP valide."
+
+    ok, destination = resolve_existing_directory(root_name, destination_folder or "")
+    if not ok:
+        return False, destination
+
+    created_files = []
+    created_dirs = []
+    try:
+        with zipfile.ZipFile(archive_path, mode="r") as archive:
+            valid, plan_or_error, total = _validate_zip_members(archive, destination, root_name, policy)
+            if not valid:
+                return False, plan_or_error
+            plan = plan_or_error
+            plan = sorted(plan, key=lambda item: (not item[2], len(item[1].parts)))
+
+            for info, target, is_dir in plan:
+                if is_dir:
+                    target.mkdir(parents=True, exist_ok=False)
+                    created_dirs.append(target)
+                    continue
+                parent = target.parent
+                missing = []
+                probe = parent
+                while probe != destination and not probe.exists():
+                    missing.append(probe)
+                    probe = probe.parent
+                for folder in reversed(missing):
+                    folder.mkdir(exist_ok=False)
+                    created_dirs.append(folder)
+                with archive.open(info, "r") as src, open(target, "xb") as dst:
+                    shutil.copyfileobj(src, dst, length=1024 * 1024)
+                created_files.append(target)
+    except Exception:
+        for path in reversed(created_files):
+            try:
+                path.unlink()
+            except OSError:
+                pass
+        for path in sorted(set(created_dirs), key=lambda x: len(x.parts), reverse=True):
+            try:
+                path.rmdir()
+            except OSError:
+                pass
+        return False, "L'extraction a échoué et les éléments créés ont été annulés autant que possible."
+
+    return True, (
+        f"ZIP extrait dans {relative_display(root_name, destination)} : "
+        f"{len(created_files)} fichier(s), {_format_bytes(total)} décompressés."
+    )
+
+
+
+# ============================================================
+# ANALYSE LOCALE DES FICHIERS - LECTURE SEULE
+# ============================================================
+
+def _resolve_analysis_file(root_name: str, file_name: str):
+    root_name = str(root_name or "").strip().lower()
+    file_name = str(file_name or "").strip()
+    policy = _policy("file_analysis_policy")
+    if root_name not in set(policy.get("allowed_roots", [])):
+        return False, "Cette racine n'est pas autorisée pour l'analyse de fichiers."
+    if not file_name:
+        return False, "Nom de fichier manquant."
+
+    # Chemin relatif explicite : résolution directe et contrôlée.
+    if "\\" in file_name or "/" in file_name:
+        ok, value = resolve_existing_inside_root(root_name, file_name, expected="file")
+        if not ok:
+            return False, value
+        return True, value
+
+    # Nom simple : résolution unique dans la racine nommée, jamais de choix automatique.
+    ok, ref = get_unique_reference_for_context(file_name, root_name=root_name, item_type="file")
+    if not ok:
+        return False, ref
+    ok, value = resolve_existing_inside_root(root_name, ref["relative_path"], expected="file")
+    if not ok:
+        return False, value
+    return True, value
+
+
+def _file_sha256(path: Path, maximum_bytes: int):
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return False, "Impossible de lire les métadonnées du fichier."
+    if size > maximum_bytes:
+        return False, (
+            f"Le fichier fait {_format_bytes(size)} et dépasse la limite d'analyse "
+            f"({_format_bytes(maximum_bytes)})."
+        )
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            while True:
+                chunk = handle.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+    except OSError:
+        return False, "Impossible de lire le fichier pour calculer son SHA-256."
+    return True, digest.hexdigest()
+
+
+def inspect_file_metadata(root_name: str, file_name: str, explicit_user_command=False, source="manual"):
+    ok, policy, error = _manual_only_check("file_analysis_policy", explicit_user_command, source)
+    if not ok:
+        return False, error
+    if not policy.get("read_only", False) or not policy.get("allow_metadata", False):
+        return False, "La consultation des métadonnées est désactivée."
+
+    ok, path = _resolve_analysis_file(root_name, file_name)
+    if not ok:
+        return False, path
+    try:
+        st = path.stat(follow_symlinks=False)
+    except OSError:
+        return False, "Impossible de lire les métadonnées du fichier."
+
+    suffix = path.suffix.lower() or "sans extension"
+    protected = bool(is_blocked_file_type(path.name))
+    modified = datetime.fromtimestamp(st.st_mtime).strftime("%d/%m/%Y %H:%M")
+    created = datetime.fromtimestamp(st.st_ctime).strftime("%d/%m/%Y %H:%M")
+    lines = [
+        f"Informations : {relative_display(root_name, path)}",
+        f"- Taille : {_format_bytes(st.st_size)}",
+        f"- Extension : {suffix}",
+        f"- Modifié : {modified}",
+        f"- Créé : {created}",
+        f"- Type protégé : {'oui' if protected else 'non'}",
+    ]
+    return True, "\n".join(lines)
+
+
+def calculate_file_sha256(root_name: str, file_name: str, explicit_user_command=False, source="manual"):
+    ok, policy, error = _manual_only_check("file_analysis_policy", explicit_user_command, source)
+    if not ok:
+        return False, error
+    if not policy.get("read_only", False) or not policy.get("allow_sha256", False):
+        return False, "Le calcul SHA-256 est désactivé."
+
+    ok, path = _resolve_analysis_file(root_name, file_name)
+    if not ok:
+        return False, path
+    if is_blocked_file_type(path.name) and not policy.get("allow_hash_blocked_file_types", False):
+        return False, "Le calcul de hash est désactivé pour ce type de fichier protégé."
+
+    maximum_bytes = int(policy.get("maximum_hash_file_bytes", 536870912))
+    ok, value = _file_sha256(path, maximum_bytes)
+    if not ok:
+        return False, value
+    return True, f"SHA-256 de {relative_display(root_name, path)} :\n{value}"
+
+
+def compare_files_sha256(root_name: str, left_name: str, right_name: str, explicit_user_command=False, source="manual"):
+    ok, policy, error = _manual_only_check("file_analysis_policy", explicit_user_command, source)
+    if not ok:
+        return False, error
+    if not policy.get("read_only", False) or not policy.get("allow_compare", False):
+        return False, "La comparaison de fichiers est désactivée."
+
+    ok, left = _resolve_analysis_file(root_name, left_name)
+    if not ok:
+        return False, left
+    ok, right = _resolve_analysis_file(root_name, right_name)
+    if not ok:
+        return False, right
+    if left.resolve() == right.resolve():
+        return True, "Tu as indiqué le même fichier deux fois : ils sont forcément identiques."
+    if (is_blocked_file_type(left.name) or is_blocked_file_type(right.name)) and not policy.get("allow_hash_blocked_file_types", False):
+        return False, "La comparaison par hash est désactivée pour les types de fichiers protégés."
+
+    try:
+        left_size = left.stat().st_size
+        right_size = right.stat().st_size
+    except OSError:
+        return False, "Impossible de lire la taille des fichiers à comparer."
+    if left_size != right_size:
+        return True, (
+            "Les deux fichiers sont différents : leurs tailles ne correspondent pas "
+            f"({_format_bytes(left_size)} contre {_format_bytes(right_size)})."
+        )
+
+    maximum_bytes = int(policy.get("maximum_hash_file_bytes", 536870912))
+    ok, left_hash = _file_sha256(left, maximum_bytes)
+    if not ok:
+        return False, left_hash
+    ok, right_hash = _file_sha256(right, maximum_bytes)
+    if not ok:
+        return False, right_hash
+
+    if left_hash == right_hash:
+        return True, (
+            "Les deux fichiers ont la même taille et le même SHA-256 : ils sont identiques "
+            "au niveau binaire selon cette vérification."
+        )
+    return True, "Les deux fichiers sont différents : leurs SHA-256 ne correspondent pas."
+
+
+def _safe_analysis_entry(path: Path):
+    try:
+        if base_file_tools.is_hard_protected_path(path):
+            return False
+        if base_file_tools.is_reparse_point(path):
+            return False
+        if base_file_tools.is_hidden_or_system(path):
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def find_duplicate_files(root_name: str, explicit_user_command=False, source="manual"):
+    ok, policy, error = _manual_only_check("file_analysis_policy", explicit_user_command, source)
+    if not ok:
+        return False, error
+    if not policy.get("read_only", False) or not policy.get("allow_duplicate_search", False):
+        return False, "La recherche de doublons est désactivée."
+    if root_name not in set(policy.get("allowed_roots", [])):
+        return False, "Cette racine n'est pas autorisée pour la recherche de doublons."
+
+    root = resolve_allowed_root(root_name)
+    if root is None:
+        return False, "Dossier racine protégé, inconnu ou introuvable."
+    try:
+        root = root.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return False, "Impossible de vérifier la racine autorisée."
+
+    max_depth = int(policy.get("maximum_duplicate_depth", 10))
+    max_entries = int(policy.get("maximum_duplicate_entries", 4000))
+    max_file_bytes = int(policy.get("maximum_hash_file_bytes", 536870912))
+    max_total_hash_bytes = int(policy.get("maximum_total_hash_bytes", 2147483648))
+    max_groups = int(policy.get("maximum_duplicate_groups", 20))
+
+    by_size = {}
+    stack = [(root, 0)]
+    scanned = 0
+    limit_reached = False
+
+    while stack:
+        directory, depth = stack.pop()
+        try:
+            entries = list(directory.iterdir())
+        except (OSError, PermissionError):
+            continue
+        for entry in entries:
+            scanned += 1
+            if scanned > max_entries:
+                limit_reached = True
+                break
+            if not _safe_analysis_entry(entry):
+                continue
+            try:
+                if entry.is_dir():
+                    if depth < max_depth:
+                        stack.append((entry, depth + 1))
+                    continue
+                if not entry.is_file():
+                    continue
+                if is_blocked_file_type(entry.name) and not policy.get("allow_hash_blocked_file_types", False):
+                    continue
+                size = entry.stat(follow_symlinks=False).st_size
+            except OSError:
+                continue
+            if size <= 0 or size > max_file_bytes:
+                continue
+            by_size.setdefault(size, []).append(entry)
+        if limit_reached:
+            break
+
+    candidates = [(size, paths) for size, paths in by_size.items() if len(paths) > 1]
+    if not candidates:
+        suffix = " La limite de sécurité a été atteinte." if limit_reached else ""
+        return True, f"Aucun doublon potentiel n'a été trouvé dans {DISPLAY_NAMES.get(root_name, root_name)}.{suffix}"
+
+    total_hashed = 0
+    groups = []
+    for size, paths in sorted(candidates, key=lambda item: item[0], reverse=True):
+        hashes = {}
+        for path in paths:
+            if total_hashed + size > max_total_hash_bytes:
+                limit_reached = True
+                break
+            ok, digest = _file_sha256(path, max_file_bytes)
+            if not ok:
+                continue
+            total_hashed += size
+            hashes.setdefault(digest, []).append(path)
+        for digest, same in hashes.items():
+            if len(same) > 1:
+                groups.append((size, digest, same))
+                if len(groups) >= max_groups:
+                    limit_reached = True
+                    break
+        if limit_reached and (total_hashed >= max_total_hash_bytes or len(groups) >= max_groups):
+            break
+
+    if not groups:
+        suffix = " La limite de sécurité a été atteinte pendant l'analyse." if limit_reached else ""
+        return True, f"Aucun doublon exact n'a été trouvé dans {DISPLAY_NAMES.get(root_name, root_name)}.{suffix}"
+
+    lines = [f"Doublons exacts trouvés dans {DISPLAY_NAMES.get(root_name, root_name)} : {len(groups)} groupe(s)."]
+    for idx, (size, digest, paths) in enumerate(groups, start=1):
+        lines.append(f"{idx}. {_format_bytes(size)} | SHA-256 {digest[:12]}…")
+        for path in paths[:10]:
+            lines.append(f"   - {relative_display(root_name, path)}")
+        if len(paths) > 10:
+            lines.append(f"   - {len(paths) - 10} autre(s) copie(s) non affichée(s)")
+    if limit_reached:
+        lines.append("- Analyse arrêtée à une limite de sécurité configurée ; d'autres doublons peuvent exister.")
+    lines.append("Aucun fichier n'a été modifié ou supprimé.")
+    return True, "\n".join(lines)
+
+
+# ============================================================
+# ANNULATION FICHIER CONTROLEE
+# ============================================================
+
+def undo_last_file_action(explicit_user_command=False, source="manual"):
+    ok, _, error = _manual_only_check("file_undo_policy", explicit_user_command, source)
+    if not ok:
+        return False, error
+    return recursive_undo_last_file_action(
+        explicit_user_command=explicit_user_command, source=source
+    )
+
+
 # ============================================================
 # VALIDATION DE POLITIQUE POUR LE CONTRAT AGENT
 # ============================================================
@@ -1364,6 +1959,13 @@ _ACTION_POLICY_MAP = {
     "set_audio_volume": "audio_control_policy",
     "change_audio_volume": "audio_control_policy",
     "set_audio_mute": "audio_control_policy",
+    "create_zip_archive": "archive_policy",
+    "extract_zip_archive": "archive_policy",
+    "undo_last_file_action": "file_undo_policy",
+    "inspect_file_metadata": "file_analysis_policy",
+    "calculate_file_sha256": "file_analysis_policy",
+    "compare_files_sha256": "file_analysis_policy",
+    "find_duplicate_files": "file_analysis_policy",
 }
 
 

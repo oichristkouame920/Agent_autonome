@@ -18,7 +18,7 @@ from windows_tools import (
     is_application_close_source_allowed,
 )
 
-from browser_bridge import close_site_via_bridge
+from browser_bridge import close_site_via_bridge, open_site_via_bridge
 
 
 # ============================================================
@@ -2147,6 +2147,35 @@ def remember_web_windows(
 # LANCEMENT EDGE
 # ============================================================
 
+def launch_edge_reuse_existing_window(
+    executable,
+    url
+):
+    """Demande à l'instance Edge existante d'ouvrir l'URL.
+
+    Aucun shell n'est utilisé et aucun argument fourni par l'utilisateur
+    n'est accepté. L'URL a déjà été résolue/validée par AgentLocal.
+    En l'absence de --new-window, Edge transmet normalement l'URL à son
+    instance déjà lancée et crée un nouvel onglet dans une fenêtre existante.
+    """
+    command = [
+        str(executable),
+        url,
+    ]
+
+    subprocess.Popen(
+        command,
+        shell=False,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+        creationflags=(
+            get_detached_creation_flags()
+        )
+    )
+
+
 def launch_edge_new_window(
     executable,
     url
@@ -2247,6 +2276,20 @@ def open_website(
     source="unspecified",
     explicit_user_command=False
 ):
+    """Ouvre un site en privilégiant une fenêtre Edge déjà ouverte.
+
+    Règle V10.9.1 :
+    - pour une demande manuelle explicite, si Edge possède déjà au moins une
+      fenêtre, le site est ouvert via le pont local dans un nouvel onglet de
+      la fenêtre Edge existante ;
+    - si aucune fenêtre Edge n'existe, AgentLocal ouvre une nouvelle fenêtre
+      Edge comme auparavant ;
+    - si une fenêtre Edge existe mais que le pont local échoue, AgentLocal
+      utilise le mécanisme natif d'Edge sans --new-window comme secours.
+
+    Les routines conservent l'ancien comportement afin de ne pas modifier
+    implicitement leur organisation de fenêtres.
+    """
     # Edge reste soumis à sa permission d'ouverture.
     if not get_application_permission(
         "edge",
@@ -2278,6 +2321,84 @@ def open_website(
     before_records = get_application_window_records(
         "edge"
     )
+
+    # Demande manuelle explicite : réutiliser la fenêtre Edge existante.
+    # Le pont local crée un nouvel onglet dans la dernière fenêtre Edge
+    # active/focalisée et ne lance jamais Edge lui-même.
+    if (
+        source == "manual"
+        and explicit_user_command
+        and before_records
+    ):
+        policy = load_permissions().get(
+            "browser_tab_policy",
+            {}
+        )
+
+        if not isinstance(policy, dict):
+            policy = {}
+
+        # Une politique explicitement désactivée reste prioritaire.
+        # En revanche, l'absence de la nouvelle clé ne bloque pas une
+        # commande manuelle explicite : cela permet la migration depuis
+        # les anciennes versions de permissions.json.
+        if policy and not policy.get("enabled", True):
+            return (
+                False,
+                "L'ouverture d'un site dans une fenêtre Edge existante est désactivée."
+            )
+
+        if policy.get(
+            "allow_open_site_in_existing_window",
+            True
+        ) is False:
+            return (
+                False,
+                (
+                    "Une fenêtre Edge est déjà ouverte, mais l'ouverture "
+                    "d'un site dans cette fenêtre est désactivée par "
+                    "permissions.json."
+                )
+            )
+
+        # 1) Le pont local reste le chemin privilégié : il cible précisément
+        # la fenêtre Edge déjà active et permet un nouvel onglet propre.
+        bridge_success, bridge_message = open_site_via_bridge(
+            url
+        )
+
+        if bridge_success:
+            return (
+                True,
+                f"Site ouvert dans une fenêtre Edge existante : {url}"
+            )
+
+        # 2) Secours natif : lancer Edge avec l'URL mais SANS --new-window.
+        # Avec une instance Edge déjà lancée, Chromium transmet normalement
+        # l'URL à cette instance et l'ouvre dans un nouvel onglet.
+        try:
+            launch_edge_reuse_existing_window(
+                edge,
+                url
+            )
+        except OSError as error:
+            return (
+                False,
+                (
+                    "Une fenêtre Edge est déjà ouverte, mais ni le pont "
+                    "local ni le secours natif Edge n'ont pu ouvrir le site. "
+                    f"Pont : {bridge_message}. Secours : {error}"
+                )
+            )
+
+        return (
+            True,
+            (
+                "Site envoyé à la fenêtre Edge existante : "
+                f"{url}. Le pont local n'a pas répondu, donc AgentLocal "
+                "a utilisé le mécanisme natif d'Edge sans --new-window."
+            )
+        )
 
     before_handles = {
         item[
@@ -2314,7 +2435,7 @@ def open_website(
         return (
             True,
             (
-                f"Site ouvert dans une fenêtre Edge suivie : {url}"
+                f"Site ouvert dans une nouvelle fenêtre Edge suivie : {url}"
             )
         )
 

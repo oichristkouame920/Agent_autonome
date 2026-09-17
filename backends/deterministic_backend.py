@@ -1342,9 +1342,9 @@ def _is_explicit_negative_request(text):
         r"^(?:il\s+)?faut\s+pas\b",
         r"^pas\s+la\s+peine\b",
         r"^je\s+(?:ne\s+)?veux\s+pas\b",
-        r"^n[' ]?(?:ouvre|lance|demarre|ferme|verifie|teste|mesure|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active|capture|prends|prend|fais|fait|monte|augmente|hausse|baisse|diminue|coupe|remets|retablis|regle|regler)\s+pas\b",
-        r"^ne\s+(?:ouvre|lance|demarre|ferme|verifie|teste|mesure|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active|capture|prends|prend|fais|fait|monte|augmente|hausse|baisse|diminue|coupe|remets|retablis|regle|regler)\s+pas\b",
-        r"^(?:ouvre|lance|demarre|ferme|verifie|teste|mesure|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active|capture|prends|prend|fais|fait|monte|augmente|hausse|baisse|diminue|coupe|remets|retablis|regle|regler)\s+pas\b",
+        r"^n[' ]?(?:ouvre|lance|demarre|ferme|verifie|teste|mesure|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active|capture|prends|prend|fais|fait|monte|augmente|hausse|baisse|diminue|coupe|remets|retablis|regle|regler|compresse|zippe|archive|extrais|decompresse|annule|cherche|trouve|retrouve|compare|calcule)\s+pas\b",
+        r"^ne\s+(?:ouvre|lance|demarre|ferme|verifie|teste|mesure|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active|capture|prends|prend|fais|fait|monte|augmente|hausse|baisse|diminue|coupe|remets|retablis|regle|regler|compresse|zippe|archive|extrais|decompresse|annule|cherche|trouve|retrouve|compare|calcule)\s+pas\b",
+        r"^(?:ouvre|lance|demarre|ferme|verifie|teste|mesure|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active|capture|prends|prend|fais|fait|monte|augmente|hausse|baisse|diminue|coupe|remets|retablis|regle|regler|compresse|zippe|archive|extrais|decompresse|annule|cherche|trouve|retrouve|compare|calcule)\s+pas\b",
     )
     return any(re.search(pattern, value) for pattern in patterns)
 
@@ -5681,6 +5681,127 @@ def parse_controlled_local_command(user_message):
     plain = re.sub(r"\s+", " ", plain).strip()
 
     # --------------------------------------------------------
+    # Annulation contrôlée - dernier fichier réversible seulement
+    # --------------------------------------------------------
+    undo_patterns = (
+        r"annule (?:moi )?(?:la |le )?derniere operation fichier",
+        r"annule (?:moi )?(?:la |le )?derniere action fichier",
+        r"annule (?:moi )?(?:le )?dernier deplacement",
+        r"annule (?:moi )?(?:la )?derniere copie",
+        r"annule (?:moi )?(?:le )?dernier renommage",
+        r"remets (?:le )?dernier fichier comme avant",
+        r"reviens sur (?:le )?dernier (?:deplacement|renommage|copie)",
+    )
+    if any(re.fullmatch(pattern, plain) for pattern in undo_patterns):
+        return [make_action("undo_last_file_action", "session")]
+
+    # --------------------------------------------------------
+    # Archives ZIP contrôlées - une source, une archive, une racine
+    # --------------------------------------------------------
+    root_pattern = r"(bureau|documents?|t[eé]l[eé]chargements?|downloads?|images?|photos?|vid[eé]os?|musique)"
+
+    # --------------------------------------------------------
+    # Analyse locale des fichiers - V10.8, lecture seule
+    # --------------------------------------------------------
+    metadata_patterns = (
+        rf"(?:donne|donner|montre|montrer|affiche|afficher)\s+(?:moi\s+)?(?:les\s+)?(?:infos|informations|details|détails)\s+(?:du\s+fichier\s+|de\s+)?(.+?)\s+(?:dans|sur)\s+(?:(?:mes|mon|ma|le|la|les)\s+)?{root_pattern}",
+        rf"(?:infos|informations|details|détails)\s+(?:du\s+fichier\s+|de\s+)?(.+?)\s+(?:dans|sur)\s+(?:(?:mes|mon|ma|le|la|les)\s+)?{root_pattern}",
+    )
+    for pattern in metadata_patterns:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if match:
+            file_name = match.group(1).strip()
+            root = _normalize_root_for_controlled_action(match.group(2))
+            if root and file_name and not is_vague_filesystem_reference(file_name):
+                return [make_action("inspect_file_metadata", root, {"file_name": file_name})]
+
+    hash_patterns = (
+        rf"(?:calcule|calculer|donne|donner|montre|montrer)\s+(?:moi\s+)?(?:le\s+)?(?:sha[- ]?256|hash|empreinte\s+sha[- ]?256)\s+(?:du\s+fichier\s+|de\s+)?(.+?)\s+(?:dans|sur)\s+(?:(?:mes|mon|ma|le|la|les)\s+)?{root_pattern}",
+        rf"(?:sha[- ]?256|hash)\s+(?:du\s+fichier\s+|de\s+)?(.+?)\s+(?:dans|sur)\s+(?:(?:mes|mon|ma|le|la|les)\s+)?{root_pattern}",
+    )
+    for pattern in hash_patterns:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if match:
+            file_name = match.group(1).strip()
+            root = _normalize_root_for_controlled_action(match.group(2))
+            if root and file_name and not is_vague_filesystem_reference(file_name):
+                return [make_action("calculate_file_sha256", root, {"file_name": file_name})]
+
+    compare_patterns = (
+        rf"(?:compare|comparer)\s+(.+?)\s+(?:avec|et)\s+(.+?)\s+(?:dans|sur)\s+(?:(?:mes|mon|ma|le|la|les)\s+)?{root_pattern}",
+        rf"(?:verifie|vérifie|verifier|vérifier)\s+si\s+(.+?)\s+(?:et|avec)\s+(.+?)\s+sont\s+identiques\s+(?:dans|sur)\s+(?:(?:mes|mon|ma|le|la|les)\s+)?{root_pattern}",
+    )
+    for pattern in compare_patterns:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if match:
+            left_name = match.group(1).strip()
+            right_name = match.group(2).strip()
+            root = _normalize_root_for_controlled_action(match.group(3))
+            if root and left_name and right_name and not is_vague_filesystem_reference(left_name) and not is_vague_filesystem_reference(right_name):
+                return [make_action("compare_files_sha256", root, {"left_name": left_name, "right_name": right_name})]
+
+    duplicate_patterns = (
+        rf"(?:cherche|chercher|trouve|trouver|montre|montrer|liste|lister)\s+(?:moi\s+)?(?:les\s+)?(?:fichiers\s+)?(?:doublons|en\s+double)\s+(?:dans|sur)\s+(?:(?:mes|mon|ma|le|la|les)\s+)?{root_pattern}",
+        rf"(?:regarde|regarder|verifie|vérifie|verifier|vérifier)\s+(?:un\s+peu\s+)?(?:les\s+)?doublons\s+(?:dans|sur)\s+(?:(?:mes|mon|ma|le|la|les)\s+)?{root_pattern}",
+        rf"(?:y\s+a|il\s+y\s+a)\s+(?:des\s+)?doublons\s+(?:dans|sur)\s+(?:(?:mes|mon|ma|le|la|les)\s+)?{root_pattern}",
+    )
+    for pattern in duplicate_patterns:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if match:
+            root = _normalize_root_for_controlled_action(match.group(1))
+            if root:
+                return [make_action("find_duplicate_files", root)]
+
+    create_patterns = (
+        rf"(?:compresse|zippe|archive)\s+(?:le\s+|la\s+|l[' ]|un\s+|une\s+)?(?:dossier\s+|fichier\s+)?(.+?)\s+(?:dans|sur)\s+(?:(?:mes|mon|ma|le|la|les)\s+)?{root_pattern}\s+(?:en|vers|sous\s+le\s+nom\s+de|nomme|appele)\s+([^\\/]+?\.zip)",
+        rf"(?:cree|creer|fais|fait)\s+(?:moi\s+)?(?:une\s+)?archive\s+zip\s+(?:de|avec)\s+(.+?)\s+(?:dans|sur)\s+(?:(?:mes|mon|ma|le|la|les)\s+)?{root_pattern}\s+(?:en|nommee|appelee|sous\s+le\s+nom\s+de)\s+([^\\/]+?\.zip)",
+    )
+    for pattern in create_patterns:
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if match:
+            source_name = match.group(1).strip()
+            root = _normalize_root_for_controlled_action(match.group(2))
+            archive_name = match.group(3).strip()
+            if root and source_name and archive_name:
+                return [make_action("create_zip_archive", root, {
+                    "source_name": source_name,
+                    "archive_name": archive_name,
+                })]
+
+    # Extraction dans la racine elle-même.
+    match = re.fullmatch(
+        rf"(?:extrais|extraire|d[eé]compresse|d[eé]compresser)\s+(?:le\s+|la\s+|l[' ]|un\s+|une\s+)?(?:fichier\s+|archive\s+|zip\s+)?(.+?\.zip)\s+"
+        rf"(?:dans|sur)\s+(?:(?:mes|mon|ma|le|la|les)\s+)?{root_pattern}",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        archive_name = match.group(1).strip()
+        root = _normalize_root_for_controlled_action(match.group(2))
+        if root:
+            return [make_action("extract_zip_archive", root, {
+                "archive_name": archive_name,
+                "destination_folder": "",
+            })]
+
+    # Extraction vers un sous-dossier existant nommé explicitement.
+    match = re.fullmatch(
+        rf"(?:extrais|extraire|d[eé]compresse|d[eé]compresser)\s+(?:le\s+|la\s+|l[' ]|un\s+|une\s+)?(?:fichier\s+|archive\s+|zip\s+)?(.+?\.zip)\s+"
+        rf"(?:dans|vers)\s+(?:le\s+)?dossier\s+(.+?)\s+(?:de|dans)\s+(?:(?:mes|mon|ma|le|la|les)\s+)?{root_pattern}",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        archive_name = match.group(1).strip()
+        destination_folder = match.group(2).strip()
+        root = _normalize_root_for_controlled_action(match.group(3))
+        if root and destination_folder:
+            return [make_action("extract_zip_archive", root, {
+                "archive_name": archive_name,
+                "destination_folder": destination_folder,
+            })]
+
+    # --------------------------------------------------------
     # Audio Windows contrôlé - volume principal uniquement
     # --------------------------------------------------------
     audio_read_patterns = (
@@ -6217,7 +6338,7 @@ def parse_local_conversation(user_message):
             "Je peux gérer les applications et fenêtres autorisées, ouvrir des sites, lancer tes routines, "
             "travailler de façon contrôlée dans tes dossiers autorisés, lire ou manipuler des fichiers selon "
             "les permissions, faire des recherches locales avancées par type, date ou taille sans lire le contenu, "
-            "consulter l'état du PC, la batterie et le réseau local, vérifier la vitesse de liaison ou l'activité réseau sans test Internet externe, lire ou régler explicitement le volume principal et le mode muet, faire une capture d'écran explicite enregistrée localement dans Images, "
+            "consulter l'état du PC, la batterie et le réseau local, vérifier la vitesse de liaison ou l'activité réseau sans test Internet externe, lire ou régler explicitement le volume principal et le mode muet, faire une capture d'écran explicite enregistrée localement dans Images, créer ou extraire des archives ZIP de façon contrôlée, annuler une seule opération fichier récente quand elle est réversible, "
             "utiliser le presse-papiers sur demande et interagir avec les onglets Edge via le pont local. "
             "Tu peux me parler naturellement ; si une demande est ambiguë, "
             "je te demanderai de préciser au lieu de décider à ta place."

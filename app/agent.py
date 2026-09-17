@@ -5312,12 +5312,20 @@ from controlled_local_tools import (
     set_audio_volume as controlled_set_audio_volume,
     change_audio_volume as controlled_change_audio_volume,
     set_audio_mute as controlled_set_audio_mute,
+    create_zip_archive as controlled_create_zip_archive,
+    extract_zip_archive as controlled_extract_zip_archive,
+    undo_last_file_action as controlled_undo_last_file_action,
+    inspect_file_metadata as controlled_inspect_file_metadata,
+    calculate_file_sha256 as controlled_calculate_file_sha256,
+    compare_files_sha256 as controlled_compare_files_sha256,
+    find_duplicate_files as controlled_find_duplicate_files,
     take_screenshot as controlled_take_screenshot,
     validate_controlled_action_policy,
     write_clipboard_text as controlled_write_clipboard_text,
 )
 from recursive_file_tools import get_unique_reference_for_context
 from session_context import clear_session_context, set_last_reference
+from session_undo import clear_last_file_undo
 
 
 CONTROLLED_LOCAL_ACTIONS = {
@@ -5339,6 +5347,13 @@ CONTROLLED_LOCAL_ACTIONS = {
     "set_audio_volume",
     "change_audio_volume",
     "set_audio_mute",
+    "create_zip_archive",
+    "extract_zip_archive",
+    "undo_last_file_action",
+    "inspect_file_metadata",
+    "calculate_file_sha256",
+    "compare_files_sha256",
+    "find_duplicate_files",
 }
 
 SUPPORTED_ACTIONS.update(CONTROLLED_LOCAL_ACTIONS)
@@ -5375,6 +5390,8 @@ def _validate_controlled_local_contract(action_data):
         "copy_last_reference_path",
         "take_screenshot",
         "read_audio_state",
+        "undo_last_file_action",
+        "find_duplicate_files",
     }
     if action in no_params_actions and params not in (None, {}):
         return False, "Paramètres supplémentaires interdits pour cette action."
@@ -5453,6 +5470,51 @@ def _validate_controlled_local_contract(action_data):
             return False, "Contrat du mode muet invalide."
         if not isinstance(params.get("muted"), bool):
             return False, "État du mode muet invalide."
+
+    elif action in {"inspect_file_metadata", "calculate_file_sha256"}:
+        if target not in ALLOWED_FILE_ROOTS or not isinstance(params, dict):
+            return False, "Racine d'analyse de fichier invalide."
+        if set(params) != {"file_name"}:
+            return False, "Paramètres d'analyse de fichier invalides."
+        if not _contract_relative_path_ok(params.get("file_name")):
+            return False, "Nom de fichier à analyser invalide."
+
+    elif action == "compare_files_sha256":
+        if target not in ALLOWED_FILE_ROOTS or not isinstance(params, dict):
+            return False, "Racine de comparaison invalide."
+        if set(params) != {"left_name", "right_name"}:
+            return False, "Paramètres de comparaison invalides."
+        if not _contract_relative_path_ok(params.get("left_name")) or not _contract_relative_path_ok(params.get("right_name")):
+            return False, "Nom de fichier à comparer invalide."
+
+    elif action == "find_duplicate_files":
+        if target not in ALLOWED_FILE_ROOTS:
+            return False, "Racine de recherche de doublons invalide."
+
+    elif action == "create_zip_archive":
+        if target not in ALLOWED_FILE_ROOTS or not isinstance(params, dict):
+            return False, "Racine ZIP invalide."
+        if set(params) != {"source_name", "archive_name"}:
+            return False, "Contrat de création ZIP invalide."
+        if not _contract_relative_path_ok(params.get("source_name")):
+            return False, "Source à compresser invalide."
+        archive_name = params.get("archive_name")
+        if not _contract_relative_path_ok(archive_name, simple_only=True) or not str(archive_name).lower().endswith(".zip"):
+            return False, "Nom de ZIP invalide."
+
+    elif action == "undo_last_file_action":
+        if target != "session":
+            return False, "Cible d'annulation invalide."
+
+    elif action == "extract_zip_archive":
+        if target not in ALLOWED_FILE_ROOTS or not isinstance(params, dict):
+            return False, "Racine ZIP invalide."
+        if set(params) != {"archive_name", "destination_folder"}:
+            return False, "Contrat d'extraction ZIP invalide."
+        if not _contract_relative_path_ok(params.get("archive_name")) or not str(params.get("archive_name", "")).lower().endswith(".zip"):
+            return False, "Archive ZIP invalide."
+        if not _contract_relative_path_ok(params.get("destination_folder", ""), allow_empty=True):
+            return False, "Dossier de destination ZIP invalide."
 
     return True, None
 
@@ -5580,6 +5642,11 @@ def execute_action(action_data, user_message=None):
             success = False
         if success:
             _remember_reference_from_successful_action(action_data)
+            if action in {
+                "create_folder", "create_file_with_content", "modify_file_content",
+                "delete_file", "delete_file_auto",
+            }:
+                clear_last_file_undo()
         return result
 
     valid, error = validate_action(action_data)
@@ -5666,6 +5733,43 @@ def execute_action(action_data, user_message=None):
     if action == "set_audio_mute":
         return controlled_set_audio_mute(
             params["muted"], explicit_user_command=True, source="manual"
+        )
+    if action == "inspect_file_metadata":
+        return controlled_inspect_file_metadata(
+            target, params["file_name"], explicit_user_command=True, source="manual"
+        )
+    if action == "calculate_file_sha256":
+        return controlled_calculate_file_sha256(
+            target, params["file_name"], explicit_user_command=True, source="manual"
+        )
+    if action == "compare_files_sha256":
+        return controlled_compare_files_sha256(
+            target, params["left_name"], params["right_name"],
+            explicit_user_command=True, source="manual"
+        )
+    if action == "find_duplicate_files":
+        return controlled_find_duplicate_files(
+            target, explicit_user_command=True, source="manual"
+        )
+    if action == "create_zip_archive":
+        result = controlled_create_zip_archive(
+            target, params["source_name"], params["archive_name"],
+            explicit_user_command=True, source="manual"
+        )
+        if result and result[0]:
+            clear_last_file_undo()
+        return result
+    if action == "extract_zip_archive":
+        result = controlled_extract_zip_archive(
+            target, params["archive_name"], params["destination_folder"],
+            explicit_user_command=True, source="manual"
+        )
+        if result and result[0]:
+            clear_last_file_undo()
+        return result
+    if action == "undo_last_file_action":
+        return controlled_undo_last_file_action(
+            explicit_user_command=True, source="manual"
         )
 
     return False, "Action locale contrôlée non implémentée."

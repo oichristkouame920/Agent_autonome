@@ -10,7 +10,7 @@ from pathlib import Path
 # ============================================================
 
 SCHEMA_VERSION = 1
-ROUTING_PATCH_VERSION = "2026-09-17-v10.5-power-network-speed"
+ROUTING_PATCH_VERSION = "2026-09-17-v10.8-file-analysis"
 
 
 # ============================================================
@@ -474,6 +474,13 @@ DETERMINISTIC_PREFLIGHT_ACTIONS = {
     "set_audio_volume",
     "change_audio_volume",
     "set_audio_mute",
+    "create_zip_archive",
+    "extract_zip_archive",
+    "undo_last_file_action",
+    "inspect_file_metadata",
+    "calculate_file_sha256",
+    "compare_files_sha256",
+    "find_duplicate_files",
 }
 
 

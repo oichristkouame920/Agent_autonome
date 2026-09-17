@@ -152,7 +152,7 @@
 
     "claude":{
       "enabled": true,
-      "url":"https://www.gouv.ci/gouvernement"
+      "url":"https://claude.ai/"
     }
   }
 }

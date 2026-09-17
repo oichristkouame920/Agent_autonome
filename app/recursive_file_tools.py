@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import file_tools as base
+from session_undo import clear_last_file_undo, get_last_file_undo, set_last_file_undo
 
 
 # ============================================================
@@ -742,6 +743,122 @@ def _resolved_rename_destination_name(source_path, requested_new_name):
             return False, cleaned_new_name
 
     return True, cleaned_new_name
+
+
+
+
+# ============================================================
+# ANNULATION TEMPORAIRE D'UNE OPERATION FICHIER
+# ============================================================
+
+def _undo_policy():
+    policy = base.get_filesystem_config().get("file_undo_policy", {})
+    return policy if isinstance(policy, dict) else {}
+
+
+def _relative_text_from_path(root_name, path):
+    root, error = _root_path(root_name)
+    if root is None:
+        return None
+    try:
+        return str(path.resolve(strict=False).relative_to(root))
+    except Exception:
+        return None
+
+
+def _record_reversible_file_action(kind, source_root, source_relative, destination_root, destination_path):
+    policy = _undo_policy()
+    if not policy.get("enabled", False):
+        clear_last_file_undo()
+        return
+    allowed = policy.get("allowed_operations", ["rename", "move", "copy"])
+    if kind not in allowed:
+        clear_last_file_undo()
+        return
+    destination_relative = _relative_text_from_path(destination_root, destination_path)
+    fingerprint = base.get_file_fingerprint(destination_path)
+    if not destination_relative or fingerprint is None:
+        clear_last_file_undo()
+        return
+    set_last_file_undo({
+        "kind": kind,
+        "source_root": str(source_root).strip().lower(),
+        "source_relative": str(source_relative),
+        "destination_root": str(destination_root).strip().lower(),
+        "destination_relative": destination_relative,
+        "destination_fingerprint": list(fingerprint),
+    })
+
+
+def clear_file_undo_history():
+    clear_last_file_undo()
+
+
+def undo_last_file_action(explicit_user_command=False, source="manual"):
+    policy = _undo_policy()
+    if not policy.get("enabled", False):
+        return False, "L'annulation de fichiers est désactivée."
+    ok, error = _manual_policy_check(policy, explicit_user_command, source, "L'annulation")
+    if not ok:
+        return False, error
+    if not policy.get("single_level", True):
+        return False, "Configuration d'annulation invalide : un seul niveau doit être autorisé."
+
+    maximum_age = policy.get("maximum_age_seconds", 900)
+    record = get_last_file_undo(maximum_age)
+    if not record:
+        return False, "Aucune opération fichier réversible récente n'est disponible dans cette session."
+
+    kind = str(record.get("kind", "")).strip().lower()
+    if kind not in {"rename", "move", "copy"}:
+        clear_last_file_undo()
+        return False, "L'opération mémorisée n'est pas réversible de façon sûre."
+
+    source_root = str(record.get("source_root", "")).strip().lower()
+    destination_root = str(record.get("destination_root", "")).strip().lower()
+    source_relative = str(record.get("source_relative", "")).strip()
+    destination_relative = str(record.get("destination_relative", "")).strip()
+    expected_fp = tuple(record.get("destination_fingerprint", []))
+
+    ok, destination_path = resolve_existing_inside_root(
+        destination_root, destination_relative, expected="file", allow_root=False
+    )
+    if not ok:
+        clear_last_file_undo()
+        return False, "Je ne peux plus annuler : le fichier créé ou déplacé n'est plus à l'emplacement attendu."
+
+    current_fp = base.get_file_fingerprint(destination_path)
+    if current_fp is None or tuple(current_fp) != expected_fp:
+        clear_last_file_undo()
+        return False, "Je ne peux plus annuler : le fichier a changé depuis l'opération."
+
+    if kind == "copy":
+        if str(policy.get("copy_undo_mode", "recycle_bin")).lower() != "recycle_bin":
+            return False, "La politique exige que l'annulation d'une copie passe par la Corbeille."
+        success, message = base.send_file_to_recycle_bin(destination_path)
+        if not success:
+            return False, message
+        clear_last_file_undo()
+        return True, (
+            f"Annulation effectuée : la copie '{relative_display(destination_root, destination_path)}' "
+            "a été envoyée dans la Corbeille Windows."
+        )
+
+    ok, source_path = resolve_new_leaf_inside_root(source_root, source_relative, leaf_kind="file")
+    if not ok:
+        return False, f"Impossible d'annuler sans écrasement : {source_path}"
+
+    try:
+        os.rename(destination_path, source_path)
+    except (OSError, PermissionError) as exc:
+        return False, f"Impossible d'annuler l'opération fichier : {exc}"
+
+    clear_last_file_undo()
+    label = "renommage" if kind == "rename" else "déplacement"
+    return True, (
+        f"Annulation effectuée : le {label} a été inversé et le fichier est revenu dans "
+        f"'{relative_display(source_root, source_path)}'."
+    )
 
 
 # ============================================================
@@ -1669,12 +1786,18 @@ def rename_file(root_name, old_name, new_name, explicit_user_command=False):
     if os.path.lexists(str(destination)):
         return False, f"'{validated_new}' existe déjà. Aucun écrasement n'est autorisé."
 
+    source_relative = _relative_text_from_path(root_name, source_path)
+    source_display = relative_display(root_name, source_path)
     try:
         os.rename(source_path, destination)
     except (OSError, PermissionError) as exc:
         return False, f"Impossible de renommer le fichier : {exc}"
 
-    return True, f"Le fichier '{relative_display(root_name, source_path)}' a été renommé en '{validated_new}'."
+    if source_relative:
+        _record_reversible_file_action("rename", root_name, source_relative, root_name, destination)
+    else:
+        clear_last_file_undo()
+    return True, f"Le fichier '{source_display}' a été renommé en '{validated_new}'."
 
 
 def rename_file_auto(old_name, new_name, explicit_user_command=False):
@@ -1763,13 +1886,13 @@ def copy_file_between_roots(
         and "\\" not in destination_folder_name
         and "/" not in destination_folder_name
     )
-    exact_source_ok, _ = resolve_existing_inside_root(
+    exact_source_ok, exact_source_path = resolve_existing_inside_root(
         source_root,
         file_name,
         expected="file",
     )
     if simple_source and simple_destination and exact_source_ok:
-        return base.copy_file_between_roots(
+        result = base.copy_file_between_roots(
             source_root,
             destination_root,
             file_name,
@@ -1777,6 +1900,14 @@ def copy_file_between_roots(
             explicit_user_command=explicit_user_command,
             source=source,
         )
+        if result and result[0]:
+            ok_dest, dest_folder = resolve_existing_directory(destination_root, destination_folder_name or "")
+            source_relative = _relative_text_from_path(source_root, exact_source_path)
+            if ok_dest and source_relative:
+                destination_path = dest_folder / exact_source_path.name
+                if destination_path.exists():
+                    _record_reversible_file_action("copy", source_root, source_relative, destination_root, destination_path)
+        return result
 
     if not base.has_filesystem_permission("can_copy"):
         return False, "La copie de fichiers est désactivée."
@@ -1845,6 +1976,11 @@ def copy_file_between_roots(
             pass
         return False, "Le fichier source a changé pendant la copie. La copie a été annulée."
 
+    source_relative = _relative_text_from_path(source_root, source_path)
+    if source_relative:
+        _record_reversible_file_action("copy", source_root, source_relative, destination_root, destination_path)
+    else:
+        clear_last_file_undo()
     return True, (
         f"Le fichier '{relative_display(source_root, source_path)}' a été copié vers "
         f"'{relative_display(destination_root, destination_path)}'."
@@ -1858,18 +1994,26 @@ def copy_file_between_roots(
 def move_file_within_root(root_name, file_name, destination_folder_name, explicit_user_command=False):
     simple_source = isinstance(file_name, str) and "\\" not in file_name and "/" not in file_name
     simple_destination = isinstance(destination_folder_name, str) and "\\" not in destination_folder_name and "/" not in destination_folder_name
-    exact_source_ok, _ = resolve_existing_inside_root(
+    exact_source_ok, exact_source_path = resolve_existing_inside_root(
         root_name,
         file_name,
         expected="file",
     )
     if simple_source and simple_destination and exact_source_ok:
-        return base.move_file_within_root(
+        source_relative = _relative_text_from_path(root_name, exact_source_path)
+        result = base.move_file_within_root(
             root_name,
             file_name,
             destination_folder_name,
             explicit_user_command=explicit_user_command,
         )
+        if result and result[0] and source_relative:
+            ok_dest, dest_folder = resolve_existing_directory(root_name, destination_folder_name)
+            if ok_dest:
+                destination_path = dest_folder / exact_source_path.name
+                if destination_path.exists():
+                    _record_reversible_file_action("move", root_name, source_relative, root_name, destination_path)
+        return result
 
     if not base.has_root_permission(root_name, "can_move_within_root"):
         return False, "Le déplacement interne n'est pas autorisé dans cette racine."
@@ -1891,11 +2035,16 @@ def move_file_within_root(root_name, file_name, destination_folder_name, explici
     if os.path.lexists(str(destination_path)):
         return False, "Un fichier du même nom existe déjà dans la destination."
 
+    source_relative = _relative_text_from_path(root_name, source_path)
     try:
         os.rename(source_path, destination_path)
     except (OSError, PermissionError) as exc:
         return False, f"Impossible de déplacer le fichier : {exc}"
 
+    if source_relative:
+        _record_reversible_file_action("move", root_name, source_relative, root_name, destination_path)
+    else:
+        clear_last_file_undo()
     return True, f"Le fichier a été déplacé vers '{relative_display(root_name, destination_path)}'."
 
 
@@ -1912,19 +2061,27 @@ def move_file_between_roots(
         and "\\" not in destination_folder_name
         and "/" not in destination_folder_name
     )
-    exact_source_ok, _ = resolve_existing_inside_root(
+    exact_source_ok, exact_source_path = resolve_existing_inside_root(
         source_root,
         file_name,
         expected="file",
     )
     if simple_source and simple_destination and exact_source_ok:
-        return base.move_file_between_roots(
+        source_relative = _relative_text_from_path(source_root, exact_source_path)
+        result = base.move_file_between_roots(
             source_root,
             destination_root,
             file_name,
             destination_folder_name=destination_folder_name,
             explicit_user_command=explicit_user_command,
         )
+        if result and result[0] and source_relative:
+            ok_dest, dest_folder = resolve_existing_directory(destination_root, destination_folder_name or "")
+            if ok_dest:
+                destination_path = dest_folder / exact_source_path.name
+                if destination_path.exists():
+                    _record_reversible_file_action("move", source_root, source_relative, destination_root, destination_path)
+        return result
 
     if str(source_root).strip().lower() == str(destination_root).strip().lower():
         return move_file_within_root(
@@ -1960,6 +2117,11 @@ def move_file_between_roots(
             f"Détail : {exc}"
         )
 
+    source_relative = _relative_text_from_path(source_root, source_path)
+    if source_relative:
+        _record_reversible_file_action("move", source_root, source_relative, destination_root, destination_path)
+    else:
+        clear_last_file_undo()
     return True, (
         f"Le fichier '{relative_display(source_root, source_path)}' a été déplacé vers "
         f"'{relative_display(destination_root, destination_path)}'."

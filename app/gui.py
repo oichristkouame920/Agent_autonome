@@ -70,6 +70,16 @@ def get_runtime_summary() -> tuple[str, str]:
     return backend_text, learning_text
 
 
+
+
+def is_local_gui_close_command(value: str) -> bool:
+    text = str(value or "").strip().lower().replace("’", "'")
+    text = " ".join(text.replace("-", " ").split())
+    return text in {
+        "sort", "quitte", "quitter", "ferme agentlocal",
+        "ferme cette fenêtre", "ferme cette fenetre",
+    }
+
 class AgentLocalGUI:
     """Fenêtre principale, volontairement simple et peu gourmande."""
 
@@ -204,7 +214,7 @@ class AgentLocalGUI:
 
         ttk.Label(
             help_frame,
-            text="Exemple : état du PC   |   Entrée = exécuter   |   Ctrl+L = effacer",
+            text="Parle naturellement : « ouvre Bloc-notes », « je veux coder », « tu es prêt ? »   |   Entrée = envoyer",
             style="Subtitle.TLabel",
         ).grid(row=0, column=0, sticky="w")
         ttk.Label(help_frame, textvariable=self.status_var, style="Status.TLabel").grid(
@@ -215,8 +225,8 @@ class AgentLocalGUI:
         self.root.bind("<Control-L>", self._on_clear_shortcut)
 
         self._append_agent(
-            "Bonjour. Écris simplement ce que tu veux faire. "
-            "Je n'exécute que les actions explicitement autorisées."
+            "Bonjour ! Tu peux me parler naturellement. Dis-moi ce que tu veux faire ; "
+            "si une demande est ambiguë, je te demanderai de préciser avant d'agir."
         )
 
     def _refresh_runtime_summary(self) -> None:
