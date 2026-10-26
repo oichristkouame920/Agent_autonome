@@ -1,8 +1,11 @@
 import importlib
 import json
 import re
+import time
 
 from pathlib import Path
+from project_paths import PROJECT_ROOT, get_project_path
+from runtime_resilience import log_event, log_exception
 
 
 # ============================================================
@@ -10,18 +13,64 @@ from pathlib import Path
 # ============================================================
 
 SCHEMA_VERSION = 1
-ROUTING_PATCH_VERSION = "2026-09-17-v10.8-file-analysis"
+ROUTING_PATCH_VERSION = "2026-10-26-v11.3-resilience"
+
+# ============================================================
+# RESILIENCE SESSION LLM
+# ============================================================
+
+LLAMA_FAILURE_THRESHOLD = 2
+LLAMA_COOLDOWN_SECONDS = 120
+_llama_consecutive_failures = 0
+_llama_disabled_until = 0.0
+
+
+def _llama_circuit_state():
+    now = time.monotonic()
+    remaining = max(0, int(_llama_disabled_until - now))
+    return {
+        "failures": _llama_consecutive_failures,
+        "disabled": remaining > 0,
+        "retry_after_seconds": remaining,
+    }
+
+
+def _record_llama_success():
+    global _llama_consecutive_failures, _llama_disabled_until
+    _llama_consecutive_failures = 0
+    _llama_disabled_until = 0.0
+
+
+def _record_llama_failure(error=None):
+    global _llama_consecutive_failures, _llama_disabled_until
+    _llama_consecutive_failures += 1
+    if error is not None:
+        log_exception("backend.llama", error)
+    if _llama_consecutive_failures >= LLAMA_FAILURE_THRESHOLD:
+        _llama_disabled_until = time.monotonic() + LLAMA_COOLDOWN_SECONDS
+        log_event(
+            "warning",
+            "backend.llama",
+            f"circuit ouvert pour {LLAMA_COOLDOWN_SECONDS}s apres {_llama_consecutive_failures} echecs",
+        )
+
+
+def _llama_session_available():
+    state = _llama_circuit_state()
+    if not state["disabled"] and _llama_disabled_until:
+        _record_llama_success()
+        state = _llama_circuit_state()
+    return not state["disabled"]
 
 
 # ============================================================
 # CHEMINS
 # ============================================================
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = PROJECT_ROOT
 
 AGENT_CONFIG_FILE = (
-    ROOT_DIR
-    / "config"
+    get_project_path("config")
     / "agent.json"
 )
 
@@ -383,6 +432,21 @@ def select_backend():
 
     if mode == "llama":
 
+        if not _llama_session_available():
+            fallback_success, fallback_module, fallback_error = load_backend_module(fallback)
+            if fallback_success:
+                fallback_runtime_ok, fallback_runtime_reason = get_backend_runtime_availability(fallback_module)
+                if fallback_runtime_ok:
+                    state = _llama_circuit_state()
+                    return (
+                        True,
+                        fallback,
+                        fallback_module,
+                        f"LLM temporairement desactive apres echecs. Nouvel essai dans {state['retry_after_seconds']} s.",
+                    )
+                fallback_error = fallback_runtime_reason or fallback_error
+            return False, None, None, fallback_error or "LLM temporairement indisponible."
+
         success, module, error = (
             load_backend_module(
                 "llama"
@@ -445,11 +509,14 @@ def select_backend():
     # BACKEND PREFERE
     # --------------------------------------------------------
 
-    success, module, error = (
-        load_backend_module(
-            preferred
+    if preferred == "llama" and not _llama_session_available():
+        success, module, error = (False, None, "LLM temporairement desactive apres echecs de session.")
+    else:
+        success, module, error = (
+            load_backend_module(
+                preferred
+            )
         )
-    )
 
     if success:
 
@@ -651,6 +718,9 @@ def interpret(
 
     except Exception as error:
 
+        if backend_name == "llama":
+            _record_llama_failure(error)
+
         # ----------------------------------------------------
         # SI LE BACKEND PRINCIPAL ECHOUE AU MOMENT
         # DE L'INTERPRETATION, ON TENTE LE DETERMINISTE.
@@ -704,6 +774,9 @@ def interpret(
         dict
     ):
 
+        if backend_name == "llama":
+            _record_llama_failure(RuntimeError("format de reponse LLM invalide"))
+
         return {
             "schema_version": SCHEMA_VERSION,
             "backend": backend_name,
@@ -744,6 +817,9 @@ def interpret(
         result[
             "backend_warning"
         ] = warning
+
+    if backend_name == "llama":
+        _record_llama_success()
 
     return result
 
@@ -817,6 +893,7 @@ def get_backend_status():
 
         "warning": warning,
         "llama_status": llama_status,
+        "llama_session_circuit": _llama_circuit_state(),
     }
 
 

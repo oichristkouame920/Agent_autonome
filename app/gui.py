@@ -27,7 +27,20 @@ if str(ROOT_DIR) not in sys.path:
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
-import agent  # noqa: E402
+from runtime_resilience import (  # noqa: E402
+    critical_health_messages,
+    format_health_summary,
+    log_exception,
+    startup_health_report,
+)
+
+AGENT_IMPORT_ERROR = None
+try:
+    import agent  # noqa: E402
+except Exception as error:  # L'interface doit rester visible meme si le coeur echoue.
+    agent = None
+    AGENT_IMPORT_ERROR = error
+    log_exception("gui.import_agent", error)
 
 
 APP_TITLE = "AgentLocal"
@@ -37,7 +50,8 @@ POLL_INTERVAL_MS = 80
 
 # L'interface ne doit pas remplir une console de messages de debug.
 # Cela ne change ni le backend, ni les validations, ni les permissions.
-agent.DEBUG = False
+if agent is not None:
+    agent.DEBUG = False
 
 
 def normalize_user_command(value: str) -> str:
@@ -49,6 +63,8 @@ def normalize_user_command(value: str) -> str:
 
 def get_runtime_summary() -> tuple[str, str]:
     """Lit la configuration sans charger volontairement un modèle LLM."""
+    if agent is None:
+        return "Moteur : indisponible", "Apprentissage : indisponible"
     try:
         config = agent.get_agent_config()
     except Exception:
@@ -93,11 +109,15 @@ class AgentLocalGUI:
         self.status_var = tk.StringVar(value="Prêt")
         self.backend_var = tk.StringVar()
         self.learning_var = tk.StringVar()
+        self.health_var = tk.StringVar(value="État : vérification...")
+        self.health_report = None
+        self.safe_mode = False
 
         self._configure_window()
         self._configure_styles()
         self._build_interface()
         self._refresh_runtime_summary()
+        self._run_startup_health_check()
 
         self.root.after(POLL_INTERVAL_MS, self._poll_worker_result)
         self.command_entry.focus_set()
@@ -150,12 +170,16 @@ class AgentLocalGUI:
         status_frame.grid(row=1, column=0, sticky="ew", pady=(12, 10))
         status_frame.columnconfigure(0, weight=1)
         status_frame.columnconfigure(1, weight=1)
+        status_frame.columnconfigure(2, weight=1)
 
         ttk.Label(status_frame, textvariable=self.backend_var, style="Status.TLabel").grid(
             row=0, column=0, sticky="w"
         )
+        ttk.Label(status_frame, textvariable=self.health_var, style="Status.TLabel").grid(
+            row=0, column=1
+        )
         ttk.Label(status_frame, textvariable=self.learning_var, style="Status.TLabel").grid(
-            row=0, column=1, sticky="e"
+            row=0, column=2, sticky="e"
         )
 
         conversation_frame = ttk.LabelFrame(outer, text="Échanges", padding=8)
@@ -234,6 +258,45 @@ class AgentLocalGUI:
         self.backend_var.set(backend_text)
         self.learning_var.set(learning_text)
 
+    def _run_startup_health_check(self) -> None:
+        try:
+            report = startup_health_report()
+        except Exception as error:
+            log_exception("gui.startup_health", error)
+            report = {"overall": "critical", "checks": []}
+
+        if AGENT_IMPORT_ERROR is not None:
+            report = dict(report)
+            checks = list(report.get("checks", []))
+            checks.append(
+                {
+                    "name": "coeur AgentLocal",
+                    "status": "critical",
+                    "critical": True,
+                    "detail": f"import impossible ({type(AGENT_IMPORT_ERROR).__name__})",
+                }
+            )
+            report["checks"] = checks
+            report["overall"] = "critical"
+
+        self.health_report = report
+        self.safe_mode = report.get("overall") == "critical"
+        self.health_var.set(format_health_summary(report))
+
+        if self.safe_mode:
+            self.command_entry.configure(state="disabled")
+            self.execute_button.configure(state="disabled")
+            details = critical_health_messages(report)
+            text = "AgentLocal a démarré en mode sûr : aucune action ne sera exécutée."
+            if details:
+                text += " Problème détecté : " + " ; ".join(details[:3])
+            self._append_error(text)
+        elif report.get("overall") == "degraded":
+            self._append_agent(
+                "Le diagnostic a détecté un composant optionnel indisponible. "
+                "AgentLocal reste utilisable avec les fonctions disponibles."
+            )
+
     def _append_text(self, prefix: str, text: str, tag: str) -> None:
         self.conversation.configure(state="normal")
         self.conversation.insert("end", prefix, tag)
@@ -273,6 +336,9 @@ class AgentLocalGUI:
 
     def execute_command(self) -> None:
         if self.busy:
+            return
+        if self.safe_mode or agent is None:
+            self.status_var.set("Mode sûr - action désactivée")
             return
 
         command = normalize_user_command(self.command_var.get())
@@ -320,10 +386,11 @@ class AgentLocalGUI:
                 result = str(result)
             self.result_queue.put_nowait(("ok", result))
         except Exception as error:
-            # L'interface ne révèle pas de trace complète ni de détails sensibles.
+            # La trace reste dans le journal local borne, pas dans l'interface.
+            log_exception("gui.command_worker", error)
             try:
                 self.result_queue.put_nowait(
-                    ("error", f"Une erreur locale a empêché le traitement : {error}")
+                    ("error", "Une erreur locale a empêché le traitement. AgentLocal reste actif ; consulte logs/agentlocal.log si le problème se répète.")
                 )
             except queue.Full:
                 pass
@@ -364,10 +431,10 @@ class AgentLocalGUI:
             if not should_close:
                 return
         try:
-            if hasattr(agent, "clear_session_context"):
+            if agent is not None and hasattr(agent, "clear_session_context"):
                 agent.clear_session_context()
-        except Exception:
-            pass
+        except Exception as error:
+            log_exception("gui.close", error)
         self.root.destroy()
 
 
