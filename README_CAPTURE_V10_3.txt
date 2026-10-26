@@ -43,7 +43,7 @@ sont connectés, ils peuvent donc apparaître dans une même capture.
 
 Vérification non destructive
 -----------------------------
-Depuis C:\\Users\\cdn09\\AgentLocal :
+Depuis <racine AgentLocal> :
 
 .\\.venv\\Scripts\\python.exe .\\verifier_capture_v10_3.py
 

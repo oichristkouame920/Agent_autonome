@@ -55,7 +55,7 @@ INSTALLATION
 ------------
 1. Fermer AgentLocal.
 2. Extraire directement le contenu du ZIP dans :
-   C:\Users\cdn09\AgentLocal
+   <racine AgentLocal>
 3. Accepter le remplacement des fichiers concernés.
 4. Vérifier :
    .\.venv\Scripts\python.exe .\verifier_recherche_avancee_v10_1.py

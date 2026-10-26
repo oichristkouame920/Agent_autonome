@@ -1,14 +1,16 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "active_model": "qwen_small",
   "runtime": {
     "llama_cli": "tools/llama.cpp/llama-cli.exe",
     "timeout_seconds": 45,
-    "minimum_confidence": 0.72
+    "minimum_confidence": 0.72,
+    "probe_runtime_on_startup": true
   },
   "models": {
     "qwen_small": {
       "file": "models/Qwen3.5-0.8B-Q4_0.gguf",
+      "companions": [],
       "context_size": 2048,
       "threads": 4,
       "max_tokens": 192,

@@ -1,0 +1,22 @@
+{
+  "schema_version": 2,
+  "paths": {
+    "config": "config",
+    "models": "models",
+    "tools": "tools",
+    "llama_runtime": "tools/llama.cpp",
+    "runtime": "runtime",
+    "python_runtime": "runtime/python",
+    "vendor": "vendor",
+    "wheels": "vendor/wheels",
+    "memory": "memory",
+    "logs": "logs",
+    "app": "app",
+    "backends": "backends",
+    "browser_extension": "browser_extension",
+    "browser_native_host": "browser_native_host",
+    "agent_tools": "agent_tools",
+    "source": "source",
+    "tests": "tests"
+  }
+}

@@ -84,7 +84,7 @@ COMPATIBILITE
 
 VERIFICATION
 ============
-Depuis C:\Users\cdn09\AgentLocal :
+Depuis <racine AgentLocal> :
 
 .\.venv\Scripts\python.exe .\verifier_actions_locales_v1.py
 

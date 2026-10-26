@@ -29,7 +29,7 @@ Il ne contient pas:
 
 Installation:
 1. Fermer AgentLocal.
-2. Extraire le contenu directement dans C:\Users\cdn09\AgentLocal.
+2. Extraire le contenu directement dans <racine AgentLocal>.
 3. Accepter le remplacement.
 4. Recharger l'extension AgentLocal dans edge://extensions/.
 5. Exécuter:

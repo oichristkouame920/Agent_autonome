@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "python": {
+    "portable_executable": "runtime/python/python.exe",
+    "portable_gui_executable": "runtime/python/pythonw.exe",
+    "venv_executable": ".venv/Scripts/python.exe",
+    "venv_gui_executable": ".venv/Scripts/pythonw.exe",
+    "requirements": "requirements.txt",
+    "offline_wheels": "vendor/wheels"
+  },
+  "llama": {
+    "runtime_dir": "tools/llama.cpp",
+    "executable": "tools/llama.cpp/llama-cli.exe",
+    "probe_args": ["--version"],
+    "probe_timeout_seconds": 10
+  }
+}
