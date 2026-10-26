@@ -2386,7 +2386,8 @@ def open_website(
                 False,
                 (
                     "Une fenêtre Edge est déjà ouverte, mais ni le pont "
-                    "local ni le secours natif Edge n'ont pu ouvrir le site. "
+                    "local de l'extension AgentLocal ni le secours natif Edge "
+                    "n'ont pu ouvrir le site. "
                     f"Pont : {bridge_message}. Secours : {error}"
                 )
             )

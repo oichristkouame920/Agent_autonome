@@ -245,6 +245,42 @@ def load_backend_module(
     )
 
 
+
+
+# ============================================================
+# DISPONIBILITE REELLE D'UN BACKEND
+# ============================================================
+
+def get_backend_runtime_availability(module):
+    """
+    Vérifie la disponibilité réelle d'un backend lorsqu'il expose
+    availability() ou is_available(). Pour le déterministe, l'import
+    réussi suffit. Cette vérification ne lance jamais le modèle.
+    """
+    availability_function = getattr(module, "availability", None)
+    if callable(availability_function):
+        try:
+            value = availability_function()
+        except Exception as error:
+            return False, str(error)
+
+        if isinstance(value, tuple):
+            ok = bool(value[0])
+            reason = value[1] if len(value) > 1 else None
+            return ok, reason
+
+        return bool(value), None
+
+    is_available_function = getattr(module, "is_available", None)
+    if callable(is_available_function):
+        try:
+            return bool(is_available_function()), None
+        except Exception as error:
+            return False, str(error)
+
+    return True, None
+
+
 # ============================================================
 # DISPONIBILITE BACKEND
 # ============================================================
@@ -269,7 +305,11 @@ def is_backend_available(
         )
     )
 
-    return success
+    if not success or module is None:
+        return False
+
+    runtime_ok, _ = get_backend_runtime_availability(module)
+    return runtime_ok
 
 
 # ============================================================
@@ -320,12 +360,15 @@ def select_backend():
 
         if success:
 
-            return (
-                True,
-                "deterministic",
-                module,
-                None
-            )
+            runtime_ok, runtime_reason = get_backend_runtime_availability(module)
+            if runtime_ok:
+                return (
+                    True,
+                    "deterministic",
+                    module,
+                    None
+                )
+            error = runtime_reason or error
 
         return (
             False,
@@ -348,12 +391,15 @@ def select_backend():
 
         if success:
 
-            return (
-                True,
-                "llama",
-                module,
-                None
-            )
+            runtime_ok, runtime_reason = get_backend_runtime_availability(module)
+            if runtime_ok:
+                return (
+                    True,
+                    "llama",
+                    module,
+                    None
+                )
+            error = runtime_reason or error
 
         # ----------------------------------------------------
         # FALLBACK DE SECURITE
@@ -367,16 +413,19 @@ def select_backend():
 
         if fallback_success:
 
-            return (
-                True,
-                fallback,
-                fallback_module,
-                (
-                    "Le backend llama n'est pas "
-                    "disponible. Utilisation du "
-                    f"backend {fallback}."
+            fallback_runtime_ok, fallback_runtime_reason = get_backend_runtime_availability(fallback_module)
+            if fallback_runtime_ok:
+                return (
+                    True,
+                    fallback,
+                    fallback_module,
+                    (
+                        "Le backend llama n'est pas "
+                        "disponible. Utilisation du "
+                        f"backend {fallback}."
+                    )
                 )
-            )
+            fallback_error = fallback_runtime_reason or fallback_error
 
         return (
             False,
@@ -404,12 +453,15 @@ def select_backend():
 
     if success:
 
-        return (
-            True,
-            preferred,
-            module,
-            None
-        )
+        runtime_ok, runtime_reason = get_backend_runtime_availability(module)
+        if runtime_ok:
+            return (
+                True,
+                preferred,
+                module,
+                None
+            )
+        error = runtime_reason or error
 
     # --------------------------------------------------------
     # FALLBACK
@@ -423,15 +475,18 @@ def select_backend():
 
     if fallback_success:
 
-        return (
-            True,
-            fallback,
-            fallback_module,
-            (
-                f"Backend {preferred} indisponible. "
-                f"Fallback vers {fallback}."
+        fallback_runtime_ok, fallback_runtime_reason = get_backend_runtime_availability(fallback_module)
+        if fallback_runtime_ok:
+            return (
+                True,
+                fallback,
+                fallback_module,
+                (
+                    f"Backend {preferred} indisponible. "
+                    f"Fallback vers {fallback}."
+                )
             )
-        )
+        fallback_error = fallback_runtime_reason or fallback_error
 
     return (
         False,
@@ -721,6 +776,16 @@ def get_backend_status():
         select_backend()
     )
 
+    llama_status = None
+    success_llama_module, llama_module, _ = load_backend_module("llama")
+    if success_llama_module and llama_module is not None:
+        status_function = getattr(llama_module, "get_status", None)
+        if callable(status_function):
+            try:
+                llama_status = status_function()
+            except Exception:
+                llama_status = None
+
     return {
         "schema_version": SCHEMA_VERSION,
 
@@ -751,6 +816,7 @@ def get_backend_status():
         ),
 
         "warning": warning,
+        "llama_status": llama_status,
     }
 
 
