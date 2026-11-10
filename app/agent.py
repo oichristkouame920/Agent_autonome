@@ -166,6 +166,7 @@ from habit_tools import (
     format_habit_draft,
     get_habit_draft,
     get_pending_habits,
+    get_learning_summary,
     record_session,
     remove_habit_draft_action,
     set_habit_draft_trigger,
@@ -2415,7 +2416,7 @@ def validate_action(
 
     if action == "list_habits":
 
-        if target != "pending":
+        if target not in {"pending", "summary"}:
 
             return (
                 False,
@@ -3443,6 +3444,28 @@ def validate_action(
 # HABITUDES EN ATTENTE
 # ============================================================
 
+def format_habit_summary():
+
+    summary = get_learning_summary()
+    accepted = int(summary.get("accepted", 0))
+    pending = int(summary.get("pending", 0))
+    drafts = int(summary.get("drafts", 0))
+
+    lines = [
+        f"Tu as {accepted} habitude(s) validée(s), {pending} proposition(s) en attente et {drafts} brouillon(s)."
+    ]
+
+    habits = get_pending_habits()
+    if habits:
+        lines.append("Propositions en attente :")
+        for habit in habits[:5]:
+            lines.append(f"- #{habit.get('id')} {habit.get('title')}")
+        if len(habits) > 5:
+            lines.append(f"- {len(habits) - 5} autre(s) proposition(s).")
+
+    return "\n".join(lines)
+
+
 def format_pending_habits():
 
     habits = get_pending_habits()
@@ -4010,6 +4033,9 @@ def execute_action(
 
     if action == "list_habits":
 
+        if target == "summary":
+            return True, format_habit_summary()
+
         return (
             True,
             format_pending_habits()
@@ -4474,9 +4500,32 @@ def interpret_instruction(
 # TRAITEMENT
 # ============================================================
 
+from action_suggestions import (
+    build_suggestion,
+    clear_pending_suggestion,
+    format_suggestion,
+    get_pending_suggestion,
+    is_accept_suggestion_message,
+    is_reject_suggestion_message,
+)
+
 def process_instruction(
     user_message
 ):
+
+    # V11.6 : une suggestion n'est jamais exécutée sans accord explicite.
+    if is_reject_suggestion_message(user_message):
+        clear_pending_suggestion()
+        return "Ça marche, je laisse tomber la suggestion."
+
+    if is_accept_suggestion_message(user_message):
+        suggestion = get_pending_suggestion()
+        if suggestion is None:
+            return "Je n’ai aucune suggestion en attente pour le moment."
+        command = suggestion.command
+        clear_pending_suggestion()
+        # On réinjecte la commande canonique : elle repasse dans toutes les validations normales.
+        return process_instruction(command)
 
     result = interpret_instruction(
         user_message
@@ -4532,11 +4581,9 @@ def process_instruction(
             )
 
         return (
-            "Je n'ai pas bien compris cette demande. "
-            "Tu peux la reformuler naturellement en indiquant ce que tu veux faire, "
-            "par exemple : « retrouve mon rapport dans Documents », "
-            "« ouvre ce qu'il faut pour rédiger un document » ou "
-            "« montre-moi ce qu'il y a dans Téléchargements »."
+            "Je n’ai pas capté exactement ce que tu veux faire. "
+            "Dis-moi juste l’action et la cible, par exemple : « ouvre Formation JS », "
+            "« retrouve mon rapport dans Documents » ou « montre mes Téléchargements »."
         )
 
     display_results, activity_results = (
@@ -4557,6 +4604,14 @@ def process_instruction(
                 habit
             )
         )
+
+    suggestion = build_suggestion(
+        user_message,
+        actions,
+        display_results,
+    )
+    if suggestion is not None:
+        display_results.append(format_suggestion(suggestion))
 
     return "\n\n".join(
         display_results
@@ -4772,6 +4827,7 @@ from recursive_file_tools import (
 from controlled_open_tools import (
     open_directory as controlled_open_directory,
     open_directory_auto as controlled_open_directory_auto,
+    close_directory_auto as controlled_close_directory_auto,
     open_file as controlled_open_file,
     open_file_auto as controlled_open_file_auto,
 )
@@ -4799,6 +4855,7 @@ RECURSIVE_FILE_ACTIONS = {
     "read_file_auto",
     "open_directory",
     "open_directory_auto",
+    "close_directory_auto",
     "open_file",
     "open_file_auto",
     "advanced_file_search",
@@ -4812,6 +4869,7 @@ SUPPORTED_ACTIONS.update(
         "read_file_auto",
         "open_directory",
         "open_directory_auto",
+        "close_directory_auto",
         "open_file",
         "open_file_auto",
         "advanced_file_search",
@@ -4826,6 +4884,7 @@ FILE_ACTIONS_REQUIRING_EXPLICIT_PROOF.update(
         "read_file_auto",
         "open_directory",
         "open_directory_auto",
+        "close_directory_auto",
         "open_file",
         "open_file_auto",
         "advanced_file_search",
@@ -5038,9 +5097,9 @@ def _validate_recursive_file_action(action_data):
         if not _contract_relative_path_ok(params.get("relative_path", ""), allow_empty=True):
             return False, "Chemin de dossier à ouvrir invalide."
 
-    elif action == "open_directory_auto":
+    elif action in {"open_directory_auto", "close_directory_auto"}:
         if not _contract_relative_path_ok(params.get("directory_name"), simple_only=True):
-            return False, "Nom de dossier à ouvrir invalide."
+            return False, "Nom de dossier invalide."
 
     elif action == "open_file":
         if not _contract_relative_path_ok(params.get("file_name")):
@@ -5049,6 +5108,9 @@ def _validate_recursive_file_action(action_data):
     elif action == "open_file_auto":
         if not _contract_relative_path_ok(params.get("file_name"), simple_only=True):
             return False, "Nom de fichier à ouvrir invalide."
+        allow_directory_fallback = params.get("allow_directory_fallback", False)
+        if not isinstance(allow_directory_fallback, bool):
+            return False, "Option d'ouverture fichier/dossier invalide."
 
     return True, None
 
@@ -5273,6 +5335,13 @@ def execute_action(action_data, user_message=None):
             source="manual",
         )
 
+    if action == "close_directory_auto":
+        return controlled_close_directory_auto(
+            params["directory_name"],
+            explicit_user_command=True,
+            source="manual",
+        )
+
     if action == "open_file":
         return controlled_open_file(
             target,
@@ -5286,6 +5355,7 @@ def execute_action(action_data, user_message=None):
             params["file_name"],
             explicit_user_command=True,
             source="manual",
+            allow_directory_fallback=params.get("allow_directory_fallback", False),
         )
 
     return False, "Action fichier récursive non implémentée."
@@ -5582,11 +5652,12 @@ def _remember_reference_from_successful_action(action_data):
             return
 
         if action in {"open_file_auto", "read_file_auto"}:
+            item_type = "any" if (action == "open_file_auto" and params.get("allow_directory_fallback", False)) else "file"
             ok, ref = get_unique_reference_for_context(
-                params.get("file_name"), root_name=None, item_type="file"
+                params.get("file_name"), root_name=None, item_type=item_type
             )
             if ok:
-                set_last_reference(ref["root_name"], ref["relative_path"], "file")
+                set_last_reference(ref["root_name"], ref["relative_path"], ref.get("item_type", "file"))
             return
 
         if action == "create_file_with_content":

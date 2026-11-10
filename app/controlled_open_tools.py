@@ -287,10 +287,40 @@ def open_file(root_name, file_name, explicit_user_command=False, source="manual"
     return True, f"Fichier ouvert avec {display} : {recursive.relative_display(root_name, file_path)}"
 
 
-def open_file_auto(file_name, explicit_user_command=False, source="manual"):
+def open_file_auto(
+    file_name,
+    explicit_user_command=False,
+    source="manual",
+    allow_directory_fallback=False,
+):
     allowed, error = _manual_open_allowed(explicit_user_command, source)
     if not allowed:
         return False, error
+
+    if allow_directory_fallback:
+        ok, reference = recursive.get_unique_reference_for_context(
+            file_name,
+            root_name=None,
+            item_type="any",
+        )
+        if not ok:
+            return False, reference
+
+        root_name = reference["root_name"]
+        relative_path = reference["relative_path"]
+        if reference["item_type"] == "dir":
+            return open_directory(
+                root_name,
+                relative_path,
+                explicit_user_command=True,
+                source="manual",
+            )
+        return open_file(
+            root_name,
+            relative_path,
+            explicit_user_command=True,
+            source="manual",
+        )
 
     ok, candidate = recursive._unique_file_candidate(file_name)
     if not ok:
@@ -307,4 +337,22 @@ def open_file_auto(file_name, explicit_user_command=False, source="manual"):
         relative_path,
         explicit_user_command=True,
         source="manual",
+    )
+
+
+def close_directory_auto(directory_name, explicit_user_command=False, source="manual"):
+    """Ferme une seule fenêtre Explorateur correspondant à un dossier unique."""
+    allowed, error = _manual_open_allowed(explicit_user_command, source)
+    if not allowed:
+        return False, error
+
+    ok, candidate = recursive._unique_directory_candidate(directory_name)
+    if not ok:
+        return False, candidate
+
+    _root_name, directory = candidate
+    return windows_tools.close_explorer_window_by_folder_name(
+        directory.name,
+        source="manual",
+        explicit_user_command=True,
     )

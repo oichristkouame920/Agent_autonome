@@ -38,13 +38,15 @@ class WebExistingEdgeV109Tests(unittest.TestCase):
         with p1, p2, p3, \
              patch.object(web_tools, 'get_application_window_records', return_value=[{'hwnd': 101}]), \
              patch.object(web_tools, 'open_site_via_bridge', return_value=(False, 'pont indisponible')), \
-             patch.object(web_tools, 'launch_edge_new_window') as launch:
+             patch.object(web_tools, 'launch_edge_new_window') as launch, \
+             patch.object(web_tools, 'launch_edge_reuse_existing_window') as native_fallback:
             ok, message = web_tools.open_website(
                 'github', source='manual', explicit_user_command=True
             )
         self.assertFalse(ok)
         self.assertIn('extension AgentLocal', message)
         launch.assert_not_called()
+        native_fallback.assert_not_called()
 
     def test_manual_open_starts_edge_if_no_window_exists(self):
         p1, p2, p3 = self._common()
@@ -63,20 +65,19 @@ class WebExistingEdgeV109Tests(unittest.TestCase):
         launch.assert_called_once()
         remember.assert_called_once()
 
-    def test_routine_keeps_previous_new_window_behavior(self):
+    def test_routine_reuses_existing_edge_window(self):
         p1, p2, p3 = self._common()
         with p1, p2, p3, \
              patch.object(web_tools, 'get_application_window_records', return_value=[{'hwnd': 101}]), \
-             patch.object(web_tools, 'open_site_via_bridge') as bridge, \
-             patch.object(web_tools, 'launch_edge_new_window') as launch, \
-             patch.object(web_tools, 'wait_for_new_edge_windows', return_value=[{'hwnd': 202}]), \
-             patch.object(web_tools, 'remember_web_windows'):
+             patch.object(web_tools, 'open_site_via_bridge', return_value=(True, 'ok')) as bridge, \
+             patch.object(web_tools, 'launch_edge_new_window') as launch:
             ok, message = web_tools.open_website(
                 'github', source='routine', explicit_user_command=False
             )
         self.assertTrue(ok, msg=message)
-        bridge.assert_not_called()
-        launch.assert_called_once()
+        self.assertIn('fenêtre Edge existante', message)
+        bridge.assert_called_once_with('https://github.com/')
+        launch.assert_not_called()
 
 
 if __name__ == '__main__':

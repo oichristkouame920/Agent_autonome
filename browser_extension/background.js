@@ -14,6 +14,94 @@ const ALARM_NAME = "agentlocal-bridge-wakeup";
 let pollTimer = null;
 let pollPending = false;
 
+const TARGET_WINDOW_STORAGE_KEY = "agentlocalTargetWindowId";
+
+async function getStoredTargetWindowId() {
+  try {
+    const data = await chrome.storage.session.get(TARGET_WINDOW_STORAGE_KEY);
+    const value = data && data[TARGET_WINDOW_STORAGE_KEY];
+    return Number.isInteger(value) ? value : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function setStoredTargetWindowId(windowId) {
+  if (!Number.isInteger(windowId)) {
+    return;
+  }
+
+  try {
+    await chrome.storage.session.set({
+      [TARGET_WINDOW_STORAGE_KEY]: windowId
+    });
+  } catch (_) {
+    // Le prochain appel pourra reconstruire la cible depuis les fenêtres Edge.
+  }
+}
+
+async function clearStoredTargetWindowId() {
+  try {
+    await chrome.storage.session.remove(TARGET_WINDOW_STORAGE_KEY);
+  } catch (_) {
+    // Aucun traitement requis.
+  }
+}
+
+async function isUsableNormalWindow(windowId) {
+  if (!Number.isInteger(windowId)) {
+    return false;
+  }
+
+  try {
+    const win = await chrome.windows.get(windowId, { populate: false });
+    return Boolean(win && win.type === "normal");
+  } catch (_) {
+    return false;
+  }
+}
+
+async function chooseAgentLocalWindowId() {
+  // 1. Réutilise la fenêtre déjà choisie par AgentLocal pendant cette session.
+  const stored = await getStoredTargetWindowId();
+  if (await isUsableNormalWindow(stored)) {
+    return stored;
+  }
+
+  if (stored !== null) {
+    await clearStoredTargetWindowId();
+  }
+
+  // 2. À la première utilisation, préfère la fenêtre Edge actuellement focalisée.
+  try {
+    const lastFocused = await chrome.windows.getLastFocused({ populate: false });
+    if (lastFocused && lastFocused.type === "normal" && Number.isInteger(lastFocused.id)) {
+      await setStoredTargetWindowId(lastFocused.id);
+      return lastFocused.id;
+    }
+  } catch (_) {
+    // Repli sur la liste des fenêtres normales.
+  }
+
+  // 3. Sinon choisit une seule fenêtre normale existante et la mémorise.
+  try {
+    const windows = await chrome.windows.getAll({
+      populate: false,
+      windowTypes: ["normal"]
+    });
+
+    const selected = windows.find((win) => Boolean(win.focused)) || windows[0];
+    if (selected && Number.isInteger(selected.id)) {
+      await setStoredTargetWindowId(selected.id);
+      return selected.id;
+    }
+  } catch (_) {
+    // Aucun traitement requis.
+  }
+
+  return null;
+}
+
 function bridgeConfigured() {
   return Boolean(
     CONFIG &&
@@ -234,16 +322,12 @@ async function openSiteCommand(command) {
     };
   }
 
-  const activeTabs = await chrome.tabs.query({
-    active: true,
-    lastFocusedWindow: true
-  });
+  // V11.4.1 : AgentLocal conserve UNE fenêtre Edge cible pour toute la
+  // session. Tous les sites ouverts par l'agent deviennent des onglets de
+  // cette même fenêtre, même si l'utilisateur possède plusieurs fenêtres Edge.
+  const targetWindowId = await chooseAgentLocalWindowId();
 
-  const anchor = activeTabs.find((tab) => {
-    return typeof tab.windowId === "number";
-  });
-
-  if (!anchor || typeof anchor.windowId !== "number") {
+  if (!Number.isInteger(targetWindowId)) {
     return {
       ok: false,
       message: "Aucune fenêtre Edge existante n'est disponible pour ouvrir ce site."
@@ -251,7 +335,7 @@ async function openSiteCommand(command) {
   }
 
   const created = await chrome.tabs.create({
-    windowId: anchor.windowId,
+    windowId: targetWindowId,
     url: targetUrl,
     active: true
   });
@@ -263,13 +347,15 @@ async function openSiteCommand(command) {
     };
   }
 
-  await chrome.windows.update(anchor.windowId, {
+  await setStoredTargetWindowId(targetWindowId);
+
+  await chrome.windows.update(targetWindowId, {
     focused: true
   });
 
   return {
     ok: true,
-    message: `Site ouvert dans la fenêtre Edge existante : ${targetUrl}`
+    message: `Site ouvert dans la fenêtre Edge AgentLocal : ${targetUrl}`
   };
 }
 
@@ -353,7 +439,8 @@ async function executeCommand(command) {
     } else if (action === "ping") {
       result = {
         ok: true,
-        message: "Pont Edge HTTP AgentLocal opérationnel."
+        extension_version: chrome.runtime.getManifest().version,
+        message: `Pont Edge HTTP AgentLocal opérationnel (extension ${chrome.runtime.getManifest().version}).`
       };
     } else {
       result = {
@@ -472,6 +559,15 @@ function startPolling() {
 
   void pollOnce();
 }
+
+chrome.windows.onRemoved.addListener((windowId) => {
+  void (async () => {
+    const stored = await getStoredTargetWindowId();
+    if (stored === windowId) {
+      await clearStoredTargetWindowId();
+    }
+  })();
+});
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm && alarm.name === ALARM_NAME) {

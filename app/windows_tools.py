@@ -9,6 +9,7 @@ import uuid
 
 from ctypes import wintypes
 from pathlib import Path
+from project_paths import PROJECT_ROOT, get_project_path
 
 import psutil
 
@@ -17,11 +18,10 @@ import psutil
 # CHEMINS DU PROJET
 # ============================================================
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = PROJECT_ROOT
 
 PERMISSIONS_FILE = (
-    ROOT_DIR
-    / "config"
+    get_project_path("config")
     / "permissions.json"
 )
 
@@ -3218,6 +3218,51 @@ def close_application_window(
                 f"{error}"
             )
         )
+
+
+def close_explorer_window_by_folder_name(
+    folder_name,
+    source="manual",
+    explicit_user_command=False,
+):
+    """Ferme une fenêtre Explorateur unique correspondant au nom du dossier.
+
+    La fonction ne ferme jamais le shell du Bureau et refuse les correspondances
+    multiples. Elle s'appuie sur les mêmes validations WM_CLOSE que les autres
+    fermetures contrôlées.
+    """
+    wanted = str(folder_name or "").strip().casefold()
+    if not wanted:
+        return False, "Nom de dossier vide."
+
+    records = get_application_window_records("explorer")
+    matches = []
+    for record in records:
+        title = str(record.get("title") or "").strip()
+        lowered = title.casefold()
+        if lowered == wanted or lowered.startswith(wanted + " - "):
+            matches.append(record)
+
+    if not matches:
+        return False, f"Je ne vois pas de fenêtre Explorateur ouverte pour « {folder_name} »."
+    if len(matches) != 1:
+        return False, (
+            f"Je vois plusieurs fenêtres Explorateur qui correspondent à « {folder_name} ». "
+            "Je préfère ne pas choisir à ta place."
+        )
+
+    record = matches[0]
+    ok, message = close_application_window(
+        record["hwnd"],
+        "explorer",
+        source=source,
+        explicit_user_command=explicit_user_command,
+        expected_pid=record.get("window_pid"),
+        expected_process_create_time=record.get("window_process_create_time"),
+    )
+    if not ok:
+        return False, message
+    return True, f"Dossier fermé : {folder_name}"
 
 
 def close_application(

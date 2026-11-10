@@ -249,8 +249,8 @@ class AgentLocalGUI:
         self.root.bind("<Control-L>", self._on_clear_shortcut)
 
         self._append_agent(
-            "Bonjour ! Tu peux me parler naturellement. Dis-moi ce que tu veux faire ; "
-            "si une demande est ambiguë, je te demanderai de préciser avant d'agir."
+            "Salut ! Tu peux me parler normalement. Dis-moi ce qu’on fait ; "
+            "si ce n’est pas clair ou si l’action est sensible, je te demande avant d’agir."
         )
 
     def _refresh_runtime_summary(self) -> None:
@@ -357,13 +357,14 @@ class AgentLocalGUI:
 
         exit_text = command.lower().strip().replace("’", "'")
         if exit_text in {
-            "sort", "quitte", "quitter", "ferme agentlocal",
+            "sort", "stop", "quitte", "quitter", "ferme agentlocal",
             "ferme cette fenêtre", "ferme cette fenetre",
-            "arrête agentlocal", "arrete agentlocal",
+            "arrête", "arrete", "arrête agentlocal", "arrete agentlocal",
+            "ferme-toi", "ferme toi",
         }:
             self.command_var.set("")
             self._append_user(command)
-            self._append_agent("D'accord, je ferme AgentLocal.")
+            self._append_agent("Ça marche, je ferme AgentLocal.")
             self.root.after(80, self.close)
             return
 

@@ -2,6 +2,7 @@ import json
 import re
 import unicodedata
 from pathlib import Path
+from project_paths import PROJECT_ROOT, get_project_path
 
 
 # ============================================================
@@ -18,17 +19,15 @@ FIELD_LANGUAGE_PATCH_VERSION = "2026-09-17-v10.2-field-language-web-context"
 # CHEMINS
 # ============================================================
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = PROJECT_ROOT
 
 SITES_FILE = (
-    ROOT_DIR
-    / "config"
+    get_project_path("config")
     / "sites.json"
 )
 
 ROUTINES_FILE = (
-    ROOT_DIR
-    / "config"
+    get_project_path("config")
     / "routines.json"
 )
 
@@ -1248,7 +1247,7 @@ def _looks_like_forbidden_execution_target(value):
     if not normalized:
         return False
     normalized = re.sub(
-        r"^(?:le|la|l'|un|une)\s+",
+        r"^(?:le|la|l[\' ]|un|une)\s*",
         "",
         normalized,
         count=1,
@@ -1445,6 +1444,52 @@ def _is_ambiguous_spoken_destructive_request(text):
     )
     return value.startswith(destructive)
 
+def _rewrite_casual_grammar(text):
+    """Corrige quelques tournures orales sûres sans toucher aux noms libres."""
+    value = str(text or "").strip().replace("’", "'")
+    if not value or _has_literal_content_payload(value):
+        return value
+
+    # « liste tout mes documents » / « montre tous mes fichiers ».
+    value = re.sub(
+        r"^(liste|affiche|montre|voir)\s+(?:tout|tous|toute|toutes)\s+(mes|les)\s+",
+        r"\1 \2 ",
+        value,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+
+    # Petite faute de frappe très fréquente sur l'article, uniquement après
+    # un verbe de consultation : « liste lew fichiers ».
+    value = re.sub(
+        r"^(liste|affiche|montre)\s+(?:tout\s+)?lew\s+",
+        r"\1 les ",
+        value,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+
+    # « check moi si Teams est ouvert » -> vérification existante.
+    value = re.sub(
+        r"^(?:check|checke|checker)\s+(?:moi\s+)?si\s+",
+        "verifie si ",
+        value,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+
+    # « fais voir mes Documents » -> listing existant.
+    value = re.sub(
+        r"^fais\s+voir\s+",
+        "montre ",
+        value,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+
+    return value.strip()
+
+
 def build_natural_command_variants(user_message):
     """
     Produit des variantes plus naturelles, mais uniquement comme secours
@@ -1480,7 +1525,8 @@ def build_natural_command_variants(user_message):
         direct_question = direct_question.rstrip(" .!?").strip()
     add(direct_question)
 
-    value = _rewrite_indirect_natural_request(original)
+    value = _rewrite_casual_grammar(original)
+    value = _rewrite_indirect_natural_request(value)
     value = _strip_natural_leading_wrappers(value)
     if _looks_like_spoken_safe_context(value):
         value = _strip_spoken_ivoirian_fillers(value)
@@ -2025,14 +2071,32 @@ def parse_habit_command(
         "liste mes habitudes",
         "voir mes habitudes",
         "mes habitudes",
+        "quelle sont mes habitude",
+        "quelles sont mes habitude",
+        "quelle sont mes habitudes",
+        "quelles sont mes habitudes",
+        "liste mes habitude",
+        "montre mes habitude",
     }:
 
         return [
             make_action(
                 "list_habits",
-                "pending"
+                "summary"
             )
         ]
+
+    if text in {
+        "habitudes en attente",
+        "mes habitudes en attente",
+        "liste les habitudes en attente",
+        "liste mes habitudes en attente",
+        "montre les habitudes en attente",
+        "montre mes habitudes en attente",
+        "propositions d habitudes",
+        "propositions d'habitudes",
+    }:
+        return [make_action("list_habits", "pending")]
 
     # --------------------------------------------------------
     # Confirmer
@@ -5148,6 +5212,24 @@ def _looks_like_file_reference(value, explicit_file_context=False):
     return bool(leaf)
 
 
+def parse_close_directory_natural(user_message):
+    """Ferme une seule fenêtre Explorateur correspondant à un dossier nommé."""
+    raw = str(user_message or "").strip().replace("’", "'")
+
+    match = re.fullmatch(
+        r"\s*(?:ferme|fermer)\s+(?:le\s+)?dossier\s+([^\\/]+?)\s*[.!?]?\s*",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return []
+
+    name = match.group(1).strip()
+    if not _safe_relative_path_syntax(name):
+        return []
+    return [make_action("close_directory_auto", "auto", {"directory_name": name})]
+
+
 def parse_open_directory_natural(user_message):
     """Parses manual requests that mean opening a folder in Explorer."""
     raw = str(user_message or "").strip().replace("\u2019", "'")
@@ -5269,7 +5351,11 @@ def parse_open_file_natural(user_message):
         if normalize_text(name) in SAFE_NATURAL_TARGET_TYPOS:
             return []
         if _looks_like_file_reference(name, explicit_file_context=False):
-            return [make_action("open_file_auto", "auto", {"file_name": name})]
+            return [make_action(
+                "open_file_auto",
+                "auto",
+                {"file_name": name, "allow_directory_fallback": True},
+            )]
 
     return []
 
@@ -5419,6 +5505,7 @@ def _looks_like_advanced_file_search(text):
         r"\b(?:fichiers?|documents?)\s+(?:les\s+)?plus\s+(?:gros|volumineux)\b",
         r"\b(?:plus|moins)\s+de\s+\d+(?:[.,]\d+)?\s*(?:ko|kb|mo|mb|go|gb)\b",
         r"\bfichiers?\s+(?:word|excel|power\s*point|powerpoint|pdf)\b",
+        r"\b(?:fichiers?|documents?)\s+(?:en\s+)?\.?(?:txt|md|markdown|csv|json)\b",
         r"\b(?:les|mes|des)\s+(?:pdf|images?|photos?|videos?|fichiers?\s+audio|fichiers?\s+texte)\b",
         r"\bcombien\b.*\b(?:fichiers?|documents?|pdf|images?|photos?|videos?|word|excel)\b",
         r"\btelecharge(?:s|e|es)?\b",
@@ -5468,6 +5555,7 @@ def parse_advanced_file_search(user_message):
 
 def parse_recursive_filesystem_command(user_message):
     parsers = (
+        parse_close_directory_natural,
         parse_open_directory_natural,
         parse_open_file_natural,
         parse_access_directory_natural,
@@ -5517,6 +5605,7 @@ def _result_has_vague_filesystem_reference(result):
         "read_file_content",
         "read_file_auto",
         "open_directory_auto",
+        "close_directory_auto",
         "open_file",
         "open_file_auto",
     }
@@ -5807,9 +5896,11 @@ def parse_controlled_local_command(user_message):
     audio_read_patterns = (
         r"(?:quel est|c'est quoi|c est quoi) (?:le )?(?:volume|niveau du son)",
         r"(?:le )?(?:volume|son) (?:est|il est|ca tourne|se trouve) a combien(?: pour cent)?",
+        r"(?:le )?(?:volume|son) c est combien",
         r"(?:donne|montre|affiche|dis moi) (?:moi )?(?:le )?(?:volume|niveau du son)",
         r"(?:niveau|etat) (?:du )?(?:volume|son)",
         r"volume principal",
+        r"(?:le )?(?:volume|son)",
     )
     if any(re.fullmatch(pattern, plain) for pattern in audio_read_patterns):
         return [make_action("read_audio_state", "master")]
@@ -5986,6 +6077,9 @@ def parse_controlled_local_command(user_message):
             r"(?:la )?(?:ram|memoire vive) (?:la )?(?:ca dit quoi|est comment)",
             r"(?:niveau|etat) (?:de la )?(?:ram|memoire vive)",
             r"combien (?:la )?(?:ram|memoire vive) (?:prend|utilise)",
+            r"combien de (?:ram|memoire|memoire vive) (?:il me reste|reste|est disponible)",
+            r"combien (?:de )?(?:memoire|ram) (?:il me reste|me reste)",
+            r"il me reste combien (?:de )?(?:memoire|ram)",
         )),
         ("disk", (
             r"(?:il reste|il me reste|j'ai|j ai) combien (?:d'espace|d espace) (?:sur )?(?:mon )?disque(?: c)?",
@@ -6019,7 +6113,9 @@ def parse_controlled_local_command(user_message):
             r"(?:etat|infos|informations) systeme",
             r"comment va (?:mon )?pc",
             r"(?:le |mon )?pc (?:la )?(?:ca dit quoi|est comment)",
-            r"(?:fais moi|donne moi|montre moi|regarde) (?:un peu )?(?:l'etat|l etat) (?:de )?(?:mon |du )?pc",
+            r"(?:ca dit quoi|c est comment) (?:le |mon )?pc",
+            r"(?:fais moi|donne moi|donne|montre moi|montre|affiche|regarde) (?:un peu )?(?:l'etat|l etat) (?:de )?(?:mon |du )?pc",
+            r"(?:quelles?|donne|montre|affiche) (?:sont )?(?:les )?(?:caracteristiques?|infos|informations) (?:de )?(?:ma |mon |du )?(?:machine|pc|ordinateur)",
         )),
     )
     for query, patterns in system_patterns:
@@ -6230,8 +6326,8 @@ def parse_local_conversation(user_message):
     # Salutations et prise de contact.
     if re.fullmatch(r"(?:bonjour|salut|coucou|hello|bonsoir)(?:\s+(?:agent|agentlocal))?", text):
         if text.startswith("bonsoir"):
-            return "Bonsoir ! Je suis prêt. Dis-moi simplement ce que tu veux faire."
-        return "Bonjour ! Je suis prêt. Dis-moi simplement ce que tu veux faire."
+            return "Bonsoir ! Je suis là. Dis-moi ce qu’on fait."
+        return "Bonjour ! Je suis là. Dis-moi ce qu’on fait."
 
     # Remerciements et validations courantes.
     if text in {
@@ -6244,16 +6340,16 @@ def parse_local_conversation(user_message):
         "ok", "okay", "d'accord", "dac", "ca marche", "c'est bon", "c est bon",
         "nickel", "parfait", "on est bon", "c'est carre", "c est carre", "bien recu",
     }:
-        return "D'accord."
+        return "Ça marche."
 
     if text in {"ca va", "comment ca va", "tu vas bien", "ca va agentlocal", "tout va bien"}:
-        return "Oui, tout va bien. Qu'est-ce que tu veux faire ?"
+        return "Oui, ça va. Tu veux qu’on fasse quoi ?"
 
     if text in {"c'est comment", "c est comment", "ca dit quoi", "on dit quoi"}:
-        return "Ça va. Dis-moi ce que tu veux faire."
+        return "Ça va. Dis-moi ce qu’on fait."
 
     if text in {"on est ensemble", "ya pas drap", "y a pas drap"}:
-        return "D'accord, on est ensemble."
+        return "On est ensemble."
 
     # Etat de l'assistant, sans action systeme.
     if text in {
@@ -6261,7 +6357,7 @@ def parse_local_conversation(user_message):
         "on peut commencer", "on peut y aller", "tu fonctionnes", "tu marches",
         "agentlocal est pret", "agentlocal tu es pret",
     }:
-        return "Oui, je suis prêt. Donne-moi une action précise et je vérifierai qu'elle est autorisée avant de l'exécuter."
+        return "Oui, je suis là. Dis-moi ce qu’on fait ; si une action est sensible ou pas claire, je te le dirai avant d’agir."
 
     if text in {
         "je peux te parler normalement", "je peux parler normalement",
@@ -6279,8 +6375,8 @@ def parse_local_conversation(user_message):
         "fais tout", "occupe toi de ca", "occupe-toi de ca", "arrange ca",
     }:
         return (
-            "Je peux t'aider, mais je ne décide pas seul de l'action à faire. "
-            "Dis-moi précisément ce que tu veux que j'ouvre, vérifie, déplace ou consulte."
+            "Je peux gérer, mais dis-moi juste ce que tu veux faire exactement. "
+            "Je préfère te demander plutôt que choisir une action à ta place."
         )
 
     # Demandes fonctionnelles volontairement ambigues.
@@ -6344,10 +6440,24 @@ def parse_local_conversation(user_message):
             "je te demanderai de préciser au lieu de décider à ta place."
         )
 
-    if text in {"qui es tu", "qui es-tu", "c'est quoi agentlocal", "tu es qui", "agentlocal c'est quoi"}:
+    if text in {
+        "qui es tu", "qui es-tu", "qui est tu", "c'est quoi agentlocal", "tu es qui",
+        "agentlocal c'est quoi", "quel est ton role", "c'est quoi ton role", "c est quoi ton role",
+        "a quoi tu sers", "tu sers a quoi",
+    }:
         return (
-            "Je suis AgentLocal, ton assistant local sur ce PC. Je comprends des demandes naturelles, "
-            "mais chaque action reste soumise aux permissions et aux règles de sécurité du projet."
+            "Je suis AgentLocal, ton assistant sur ce PC. Tu peux me parler normalement : "
+            "je t’aide avec les applications, les fichiers et les outils autorisés. "
+            "Pour les actions sensibles, je garde les règles de sécurité et je ne devine pas à ta place."
+        )
+
+    if re.fullmatch(
+        r"(?:cree|creer)\s+(?:(?:le|un)\s+fichier\s+)?[^\s]+\.(?:txt|md|json|csv)\s+dans\s+(?:mes\s+|mon\s+|ma\s+|le\s+|la\s+|les\s+)?(?:documents?|bureau|telechargements?|images?|videos?|musique)",
+        text,
+    ):
+        return (
+            "Je peux creer ce fichier, mais indique aussi son contenu pour eviter de creer un fichier vide par erreur. "
+            "Par exemple : « cree document.txt dans Documents avec le contenu Bonjour »."
         )
 
     if text in {
@@ -6360,6 +6470,26 @@ def parse_local_conversation(user_message):
         )
 
     return None
+
+
+def _folder_delete_conversation_reply(text):
+    """Comprend une demande de suppression de dossier sans étendre les droits destructifs."""
+    value = str(text or "").strip().replace("’", "'").strip(" .!?")
+    match = re.fullmatch(
+        r"(?:supprime|supprimer|efface|effacer|jette|jeter)\s+(?:le\s+|un\s+)?dossier\s+(.+)",
+        value,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    name = match.group(1).strip()
+    if not name or is_vague_filesystem_reference(name):
+        return "Je vois que tu veux supprimer un dossier, mais dis-moi lequel précisément."
+    return (
+        f"J’ai compris que tu veux supprimer le dossier « {name} ». "
+        "La suppression de dossiers n’est pas activée pour l’instant : je ne touche à rien. "
+        "Je peux par contre le retrouver ou l’ouvrir si tu veux."
+    )
 
 
 def _is_clipboard_execution_request(text):
@@ -6401,6 +6531,17 @@ def interpret(user_message):
             "conversation": True,
         }
 
+    folder_delete_reply = _folder_delete_conversation_reply(original_message)
+    if folder_delete_reply:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "backend": "deterministic",
+            "understood": True,
+            "actions": [],
+            "reply": folder_delete_reply,
+            "conversation": True,
+        }
+
     if _is_clipboard_execution_request(original_message):
         return {
             "schema_version": SCHEMA_VERSION,
@@ -6422,7 +6563,7 @@ def interpret(user_message):
             "backend": "deterministic",
             "understood": True,
             "actions": [],
-            "reply": "D'accord, je ne fais rien.",
+            "reply": "Ça marche, je ne fais rien.",
             "conversation": True,
         }
 

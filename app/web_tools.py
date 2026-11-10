@@ -8,6 +8,7 @@ import time
 from ctypes import wintypes
 
 from pathlib import Path
+from project_paths import PROJECT_ROOT, get_project_path
 from urllib.parse import urlparse
 
 from windows_tools import (
@@ -25,23 +26,20 @@ from browser_bridge import close_site_via_bridge, open_site_via_bridge
 # CHEMINS
 # ============================================================
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
+ROOT_DIR = PROJECT_ROOT
 
 SITES_FILE = (
-    ROOT_DIR
-    / "config"
+    get_project_path("config")
     / "sites.json"
 )
 
 PERMISSIONS_FILE = (
-    ROOT_DIR
-    / "config"
+    get_project_path("config")
     / "permissions.json"
 )
 
 WEB_WINDOW_STATE_FILE = (
-    ROOT_DIR
-    / "memory"
+    get_project_path("memory")
     / "web_windows.json"
 )
 
@@ -85,6 +83,17 @@ INPUT_ALIASES = {
     "google photos": "photos",
     "google maps": "maps",
     "google translate": "translate",
+}
+
+
+# Sites courants dont l'URL d'usage differe du simple <nom>.com.
+# Les alias personnalises de sites.json restent prioritaires.
+BUILTIN_SITE_URLS = {
+    "whatsapp": "https://web.whatsapp.com/",
+    "chatgpt": "https://chatgpt.com/",
+    "github": "https://github.com/",
+    "google": "https://www.google.com/",
+    "youtube": "https://www.youtube.com/",
 }
 
 
@@ -1835,6 +1844,16 @@ def resolve_site(user_input):
         )
 
     # --------------------------------------------------------
+    # ALIAS INTEGRES AGENTLOCAL
+    # --------------------------------------------------------
+
+    builtin_url = BUILTIN_SITE_URLS.get(value)
+    if builtin_url:
+        if validate_url(builtin_url):
+            return True, builtin_url, None
+        return False, None, f"L'URL integree pour {value} est invalide."
+
+    # --------------------------------------------------------
     # URL HTTPS COMPLETE
     # --------------------------------------------------------
 
@@ -2278,17 +2297,16 @@ def open_website(
 ):
     """Ouvre un site en privilégiant une fenêtre Edge déjà ouverte.
 
-    Règle V10.9.1 :
-    - pour une demande manuelle explicite, si Edge possède déjà au moins une
-      fenêtre, le site est ouvert via le pont local dans un nouvel onglet de
-      la fenêtre Edge existante ;
-    - si aucune fenêtre Edge n'existe, AgentLocal ouvre une nouvelle fenêtre
-      Edge comme auparavant ;
-    - si une fenêtre Edge existe mais que le pont local échoue, AgentLocal
-      utilise le mécanisme natif d'Edge sans --new-window comme secours.
+    Règle V11.4 :
+    - si au moins une fenêtre Edge existe, tout site est ouvert dans un nouvel
+      onglet de la fenêtre Edge existante, y compris depuis une routine ;
+    - si aucune fenêtre Edge n'existe, AgentLocal crée une seule fenêtre Edge ;
+    - les ouvertures suivantes réutilisent cette même fenêtre ;
+    - si le pont local échoue alors qu'Edge est déjà ouvert, AgentLocal refuse
+      l'ouverture plutôt que de risquer de créer/utiliser une autre fenêtre.
 
-    Les routines conservent l'ancien comportement afin de ne pas modifier
-    implicitement leur organisation de fenêtres.
+    Une nouvelle fenêtre Edge reste possible uniquement via une commande
+    explicite dédiée à Edge (par exemple « ouvre une nouvelle fenêtre Edge »).
     """
     # Edge reste soumis à sa permission d'ouverture.
     if not get_application_permission(
@@ -2322,14 +2340,11 @@ def open_website(
         "edge"
     )
 
-    # Demande manuelle explicite : réutiliser la fenêtre Edge existante.
-    # Le pont local crée un nouvel onglet dans la dernière fenêtre Edge
-    # active/focalisée et ne lance jamais Edge lui-même.
-    if (
-        source == "manual"
-        and explicit_user_command
-        and before_records
-    ):
+    # Regle globale : tant qu'une fenetre Edge existe deja, tous les sites
+    # partagent cette fenetre. Cela vaut aussi pour les routines.
+    # Le pont local cree un nouvel onglet dans la derniere fenetre Edge
+    # active/focalisee et ne lance jamais Edge lui-meme.
+    if before_records:
         policy = load_permissions().get(
             "browser_tab_policy",
             {}
@@ -2338,10 +2353,9 @@ def open_website(
         if not isinstance(policy, dict):
             policy = {}
 
-        # Une politique explicitement désactivée reste prioritaire.
-        # En revanche, l'absence de la nouvelle clé ne bloque pas une
-        # commande manuelle explicite : cela permet la migration depuis
-        # les anciennes versions de permissions.json.
+        # Une politique explicitement desactivee reste prioritaire.
+        # L'absence de la nouvelle cle ne bloque pas la reutilisation de la
+        # fenetre : cela permet la migration depuis les anciennes versions.
         if policy and not policy.get("enabled", True):
             return (
                 False,
@@ -2373,31 +2387,19 @@ def open_website(
                 f"Site ouvert dans une fenêtre Edge existante : {url}"
             )
 
-        # 2) Secours natif : lancer Edge avec l'URL mais SANS --new-window.
-        # Avec une instance Edge déjà lancée, Chromium transmet normalement
-        # l'URL à cette instance et l'ouvre dans un nouvel onglet.
-        try:
-            launch_edge_reuse_existing_window(
-                edge,
-                url
-            )
-        except OSError as error:
-            return (
-                False,
-                (
-                    "Une fenêtre Edge est déjà ouverte, mais ni le pont "
-                    "local de l'extension AgentLocal ni le secours natif Edge "
-                    "n'ont pu ouvrir le site. "
-                    f"Pont : {bridge_message}. Secours : {error}"
-                )
-            )
-
+        # V11.4.1 : aucun fallback natif n'est autorisé quand Edge possède
+        # déjà une fenêtre. Lancer ``msedge.exe URL`` ne permet pas de cibler
+        # une fenêtre précise et peut créer ou sélectionner une autre fenêtre.
+        # Pour garantir la règle « une seule fenêtre Edge », on préfère donc
+        # refuser proprement plutôt que d'ouvrir le site au mauvais endroit.
         return (
-            True,
+            False,
             (
-                "Site envoyé à la fenêtre Edge existante : "
-                f"{url}. Le pont local n'a pas répondu, donc AgentLocal "
-                "a utilisé le mécanisme natif d'Edge sans --new-window."
+                "Une fenêtre Edge est déjà ouverte, mais le pont local "
+                "AgentLocal n'a pas pu ouvrir le nouvel onglet dans la "
+                "fenêtre cible. Recharge l'extension AgentLocal dans "
+                "edge://extensions/ puis réessaie. "
+                f"Détail : {bridge_message}"
             )
         )
 
@@ -2739,8 +2741,9 @@ def open_websites(
     site_names
 ):
     """
-    Ouvre chaque site dans sa propre fenêtre Edge afin que chaque
-    fenêtre puisse être fermée individuellement plus tard.
+    Ouvre tous les sites dans une seule fenetre Edge par defaut.
+    Si Edge n'est pas encore ouvert, le premier site cree la fenetre ;
+    les suivants sont ajoutes comme onglets de cette meme fenetre.
     """
 
     if not get_application_permission(

@@ -34,7 +34,7 @@ class WebExistingEdgeV1091Tests(unittest.TestCase):
         native.assert_not_called()
         new_window.assert_not_called()
 
-    def test_bridge_failure_uses_native_edge_without_new_window(self):
+    def test_bridge_failure_refuses_instead_of_risking_another_window(self):
         p1, p2, p3 = self._common()
         with p1, p2, p3, \
              patch.object(web_tools, 'get_application_window_records', return_value=[{'hwnd': 101}]), \
@@ -43,9 +43,9 @@ class WebExistingEdgeV1091Tests(unittest.TestCase):
              patch.object(web_tools, 'launch_edge_reuse_existing_window') as native, \
              patch.object(web_tools, 'launch_edge_new_window') as new_window:
             ok, message = web_tools.open_website('github', source='manual', explicit_user_command=True)
-        self.assertTrue(ok, msg=message)
-        self.assertIn('sans --new-window', message)
-        native.assert_called_once()
+        self.assertFalse(ok)
+        self.assertIn('extension AgentLocal', message)
+        native.assert_not_called()
         new_window.assert_not_called()
 
     def test_missing_policy_key_does_not_block_manual_migration(self):
@@ -57,8 +57,9 @@ class WebExistingEdgeV1091Tests(unittest.TestCase):
              patch.object(web_tools, 'launch_edge_reuse_existing_window') as native, \
              patch.object(web_tools, 'launch_edge_new_window') as new_window:
             ok, message = web_tools.open_website('github', source='manual', explicit_user_command=True)
-        self.assertTrue(ok, msg=message)
-        native.assert_called_once()
+        self.assertFalse(ok)
+        self.assertIn('extension AgentLocal', message)
+        native.assert_not_called()
         new_window.assert_not_called()
 
     def test_explicit_policy_disable_still_blocks(self):

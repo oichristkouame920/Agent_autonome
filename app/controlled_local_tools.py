@@ -27,10 +27,11 @@ import zipfile
 from datetime import datetime
 from ctypes import wintypes
 from pathlib import Path, PurePosixPath
+from project_paths import PROJECT_ROOT, get_project_path
 from urllib.parse import urlparse
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-PERMISSIONS_FILE = ROOT_DIR / "config" / "permissions.json"
+ROOT_DIR = PROJECT_ROOT
+PERMISSIONS_FILE = get_project_path("config") / "permissions.json"
 
 try:
     import psutil  # déjà utilisé par windows_tools.py dans AgentLocal
@@ -971,6 +972,27 @@ def _normalized_host(value: str):
     return host
 
 
+# Hôtes equivalents limites a quelques services connus. Cela evite de
+# considerer arbitrairement tous les sous-domaines comme identiques.
+_SITE_HOST_EQUIVALENTS = {
+    "whatsapp": {"whatsapp.com", "web.whatsapp.com"},
+    "chatgpt": {"chatgpt.com"},
+    "github": {"github.com"},
+    "google": {"google.com"},
+    "youtube": {"youtube.com", "m.youtube.com"},
+}
+
+
+def _accepted_hosts_for_site(site_name: str, target_host: str):
+    normalized_name = str(site_name or "").strip().lower().replace(" ", "")
+    accepted = {target_host} if target_host else set()
+    for key, hosts in _SITE_HOST_EQUIVALENTS.items():
+        if normalized_name == key:
+            accepted.update(_normalized_host("https://" + host) for host in hosts)
+            break
+    return {host for host in accepted if host}
+
+
 def check_browser_site_open(site_name: str, explicit_user_command=False, source="manual"):
     """Vérifie en lecture seule si un site est déjà présent dans un onglet Edge."""
     ok, policy, error = _manual_only_check("browser_tab_policy", explicit_user_command, source)
@@ -989,15 +1011,21 @@ def check_browser_site_open(site_name: str, explicit_user_command=False, source=
 
     success, tabs, message = list_tabs_via_bridge()
     if not success:
-        return False, message
+        # Le pont peut etre en phase de reveil au premier appel. Une seule
+        # nouvelle tentative, uniquement en lecture, evite un faux negatif.
+        time.sleep(0.35)
+        success, tabs, retry_message = list_tabs_via_bridge()
+        if not success:
+            return False, retry_message or message
 
     allow_subdomains = bool(policy.get("allow_subdomains", False))
+    accepted_hosts = _accepted_hosts_for_site(site_name, target_host)
     matches = 0
     for tab in tabs:
         host = _normalized_host(str(tab.get("url", "")))
         if not host:
             continue
-        if host == target_host or (allow_subdomains and host.endswith("." + target_host)):
+        if host in accepted_hosts or (allow_subdomains and host.endswith("." + target_host)):
             matches += 1
 
     if matches:
