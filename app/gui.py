@@ -27,6 +27,8 @@ if str(ROOT_DIR) not in sys.path:
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
+from project_version import AGENTLOCAL_VERSION  # noqa: E402
+
 from runtime_resilience import (  # noqa: E402
     critical_health_messages,
     format_health_summary,
@@ -124,8 +126,8 @@ class AgentLocalGUI:
 
     def _configure_window(self) -> None:
         self.root.title(APP_TITLE)
-        self.root.geometry("820x560")
-        self.root.minsize(700, 460)
+        self.root.geometry("860x620")
+        self.root.minsize(720, 500)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
     def _configure_styles(self) -> None:
@@ -146,6 +148,7 @@ class AgentLocalGUI:
         style.configure("Status.TLabel", font=("Segoe UI", 9))
         style.configure("Action.TButton", font=("Segoe UI", 10, "bold"), padding=(14, 7))
         style.configure("Secondary.TButton", font=("Segoe UI", 9), padding=(10, 7))
+        style.configure("Suggestion.TButton", font=("Segoe UI", 9), padding=(10, 6))
 
     def _build_interface(self) -> None:
         outer = ttk.Frame(self.root, padding=18)
@@ -162,7 +165,7 @@ class AgentLocalGUI:
         )
         ttk.Label(
             header,
-            text="Assistant local Windows - actions uniquement sur commande explicite",
+            text=f"Assistant local Windows - V{AGENTLOCAL_VERSION} - actions uniquement sur commande explicite",
             style="Subtitle.TLabel",
         ).grid(row=1, column=0, sticky="w", pady=(2, 0))
 
@@ -204,8 +207,26 @@ class AgentLocalGUI:
         self.conversation.tag_configure("agent", font=("Segoe UI", 10), spacing1=4, spacing3=8)
         self.conversation.tag_configure("error", font=("Segoe UI", 10, "bold"), spacing1=4, spacing3=8)
 
+        self.suggestion_frame = ttk.LabelFrame(outer, text="Suggestions utiles", padding=6)
+        self.suggestion_frame.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+        self.suggestion_frame.columnconfigure(0, weight=1)
+        self.suggestion_frame.columnconfigure(1, weight=1)
+        self.suggestion_frame.columnconfigure(2, weight=1)
+        self.suggestion_buttons = []
+        for index in range(3):
+            button = ttk.Button(
+                self.suggestion_frame,
+                text="",
+                style="Suggestion.TButton",
+                command=lambda i=index: self.execute_suggestion(i),
+            )
+            button.grid(row=0, column=index, sticky="ew", padx=(0 if index == 0 else 4, 0))
+            button.grid_remove()
+            self.suggestion_buttons.append(button)
+        self.suggestion_frame.grid_remove()
+
         input_frame = ttk.Frame(outer)
-        input_frame.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        input_frame.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         input_frame.columnconfigure(0, weight=1)
 
         self.command_entry = ttk.Entry(
@@ -233,7 +254,7 @@ class AgentLocalGUI:
         self.clear_button.grid(row=0, column=2)
 
         help_frame = ttk.Frame(outer)
-        help_frame.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        help_frame.grid(row=5, column=0, sticky="ew", pady=(8, 0))
         help_frame.columnconfigure(0, weight=1)
 
         ttk.Label(
@@ -313,6 +334,55 @@ class AgentLocalGUI:
     def _append_error(self, text: str) -> None:
         self._append_text("AgentLocal : ", text, "error")
 
+    def _refresh_suggestion_buttons(self) -> None:
+        """Affiche jusqu'à trois vraies actions contextuelles cliquables."""
+        suggestions = []
+        try:
+            if agent is not None and hasattr(agent, "get_pending_action_suggestions"):
+                suggestions = agent.get_pending_action_suggestions()
+        except Exception as error:
+            log_exception("gui.suggestions", error)
+            suggestions = []
+
+        for button in getattr(self, "suggestion_buttons", []):
+            button.grid_remove()
+        if not suggestions:
+            if hasattr(self, "suggestion_frame"):
+                self.suggestion_frame.grid_remove()
+            return
+
+        self.suggestion_frame.grid()
+        for index, item in enumerate(suggestions[:3]):
+            label = str(item.get("label", "")).strip()
+            if not label:
+                continue
+            button = self.suggestion_buttons[index]
+            button.configure(text=label, state="disabled" if self.busy else "normal")
+            button.grid()
+
+    def execute_suggestion(self, index: int) -> None:
+        if self.busy or self.safe_mode or agent is None:
+            return
+        try:
+            suggestions = agent.get_pending_action_suggestions()
+        except Exception as error:
+            log_exception("gui.execute_suggestion", error)
+            return
+        if not isinstance(index, int) or index < 0 or index >= len(suggestions):
+            self._refresh_suggestion_buttons()
+            return
+        label = str(suggestions[index].get("label", "")).strip() or f"Suggestion {index + 1}"
+        command = str(index + 1)
+        self._append_user(label)
+        self._set_busy(True)
+        self.worker = threading.Thread(
+            target=self._process_command_worker,
+            args=(command,),
+            daemon=True,
+            name="AgentLocalSuggestion",
+        )
+        self.worker.start()
+
     def _set_busy(self, value: bool) -> None:
         self.busy = value
         state = "disabled" if value else "normal"
@@ -321,6 +391,13 @@ class AgentLocalGUI:
         self.clear_button.configure(state=state)
         self.status_var.set("Traitement..." if value else "Prêt")
         self.root.config(cursor="watch" if value else "")
+
+        for button in getattr(self, "suggestion_buttons", []):
+            try:
+                if button.winfo_ismapped():
+                    button.configure(state="disabled" if value else "normal")
+            except tk.TclError:
+                pass
 
         if not value:
             self.command_entry.focus_set()
@@ -407,6 +484,7 @@ class AgentLocalGUI:
             else:
                 self._append_error(text)
             self._set_busy(False)
+            self._refresh_suggestion_buttons()
 
         try:
             self.root.after(POLL_INTERVAL_MS, self._poll_worker_result)
@@ -420,6 +498,7 @@ class AgentLocalGUI:
         self.conversation.delete("1.0", "end")
         self.conversation.configure(state="disabled")
         self.status_var.set("Affichage effacé")
+        self._refresh_suggestion_buttons()
         self.command_entry.focus_set()
 
     def close(self) -> None:

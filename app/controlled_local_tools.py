@@ -1770,6 +1770,28 @@ def inspect_file_metadata(root_name: str, file_name: str, explicit_user_command=
     return True, "\n".join(lines)
 
 
+def inspect_file_metadata_auto(file_name: str, explicit_user_command=False, source="manual"):
+    """Inspecte un fichier seulement si son nom se résout de façon unique dans les racines autorisées."""
+    ok, policy, error = _manual_only_check("file_analysis_policy", explicit_user_command, source)
+    if not ok:
+        return False, error
+    if not policy.get("read_only", False) or not policy.get("allow_metadata", False):
+        return False, "La consultation des métadonnées est désactivée."
+
+    file_name = str(file_name or "").strip()
+    if not file_name:
+        return False, "Nom de fichier manquant."
+    ok, ref = get_unique_reference_for_context(file_name, root_name=None, item_type="file")
+    if not ok:
+        return False, ref
+    return inspect_file_metadata(
+        ref["root_name"],
+        ref["relative_path"],
+        explicit_user_command=True,
+        source="manual",
+    )
+
+
 def calculate_file_sha256(root_name: str, file_name: str, explicit_user_command=False, source="manual"):
     ok, policy, error = _manual_only_check("file_analysis_policy", explicit_user_command, source)
     if not ok:
@@ -1991,6 +2013,7 @@ _ACTION_POLICY_MAP = {
     "extract_zip_archive": "archive_policy",
     "undo_last_file_action": "file_undo_policy",
     "inspect_file_metadata": "file_analysis_policy",
+    "inspect_file_metadata_auto": "file_analysis_policy",
     "calculate_file_sha256": "file_analysis_policy",
     "compare_files_sha256": "file_analysis_policy",
     "find_duplicate_files": "file_analysis_policy",

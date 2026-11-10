@@ -4501,31 +4501,155 @@ def interpret_instruction(
 # ============================================================
 
 from action_suggestions import (
-    build_suggestion,
+    build_suggestions,
     clear_pending_suggestion,
-    format_suggestion,
-    get_pending_suggestion,
+    format_suggestions,
+    get_pending_suggestions,
     is_accept_suggestion_message,
     is_reject_suggestion_message,
+    resolve_suggestion_message,
+    set_pending_suggestions,
 )
+from session_context import (
+    clear_pending_choice,
+    get_last_entity,
+    resolve_pending_choice,
+    set_last_entity,
+    set_pending_choice,
+)
+
+
+def _normalize_session_phrase(value):
+    text = str(value or "").strip().lower().replace("’", "'")
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = re.sub(r"\s+", " ", text).strip(" .!?")
+    return text
+
+
+def _resolve_session_reference_command(user_message):
+    """Résout quelques pronoms sûrs vers la dernière entité explicitement manipulée."""
+    text = _normalize_session_phrase(user_message).replace("-", " ")
+    text = re.sub(r"\s+", " ", text).strip()
+    entity = get_last_entity()
+    if not entity:
+        return None
+    kind = str(entity.get("kind", "")).strip().lower()
+    target = str(entity.get("target", "")).strip()
+    if not target:
+        return None
+
+    if text in {"ferme ca", "ferme cela", "ferme le", "ferme lui", "ferme cette application", "ferme cette appli"}:
+        if kind == "application":
+            return f"ferme {target}"
+        if kind in {"website", "browser_tab"}:
+            return f"ferme {target}"
+
+    if text in {"retourne dessus", "repasse dessus", "passe dessus", "mets ca devant", "ramene ca devant"}:
+        if kind in {"website", "browser_tab"}:
+            return f"passe sur {target}"
+        if kind == "application":
+            return f"mets {target} au premier plan"
+    return None
+
+
+def _remember_last_entity(actions, display_results):
+    """Mémorise seulement une cible déjà autorisée et exécutée avec succès."""
+    if not isinstance(actions, list) or not isinstance(display_results, list):
+        return
+    for action_data, display in zip(actions, display_results):
+        if not isinstance(action_data, dict):
+            continue
+        text = str(display or "").strip().lower()
+        if text.startswith("je n'ai pas exécuté") or text.startswith("je n'ai pas execute") or text.startswith("erreur"):
+            continue
+        action = str(action_data.get("action", "")).strip().lower()
+        target = str(action_data.get("target", "")).strip()
+        if not target:
+            continue
+        if action in {"open_application", "check_application", "manage_window"}:
+            set_last_entity("application", target, action)
+        elif action in {"open_website", "close_website", "check_browser_site", "open_browser_site_existing_edge"}:
+            set_last_entity("website", target, action)
+        elif action == "activate_browser_tab":
+            set_last_entity("browser_tab", target, action)
+
+
+def _register_conversation_choices(user_message, reply):
+    """Transforme les questions de clarification connues en vrais choix actionnables."""
+    text = _normalize_session_phrase(user_message)
+    answer = str(reply or "")
+    items = []
+    choices = {}
+
+    if text in {"je veux faire un tableau", "ouvre le truc pour faire un tableau"}:
+        items = [
+            ("excel", "Ouvrir Excel pour le tableau de données", "ouvre excel"),
+            ("word", "Ouvrir Word pour un tableau dans un document", "ouvre word"),
+        ]
+        choices = {"excel": "ouvre excel", "word": "ouvre word"}
+    elif text in {"je veux ecrire quelque chose", "je veux ecrire un texte", "je veux taper un texte", "ouvre le truc pour ecrire", "ouvre ce qu'il faut pour ecrire"}:
+        items = [
+            ("notepad", "Ouvrir Bloc-notes pour du texte rapide", "ouvre bloc-notes"),
+            ("word", "Ouvrir Word pour un document", "ouvre word"),
+        ]
+        choices = {"bloc-notes": "ouvre bloc-notes", "bloc notes": "ouvre bloc-notes", "word": "ouvre word"}
+    elif text in {"ouvre note", "ouvre notes", "lance note", "lance notes", "ouvre mes notes", "lance mes notes"}:
+        items = [
+            ("notepad", "Ouvrir Bloc-notes", "ouvre bloc-notes"),
+            ("onenote", "Ouvrir OneNote", "ouvre onenote"),
+        ]
+        choices = {"bloc-notes": "ouvre bloc-notes", "bloc notes": "ouvre bloc-notes", "onenote": "ouvre onenote", "one note": "ouvre onenote"}
+
+    if items:
+        set_pending_suggestions(items)
+        set_pending_choice("clarification", choices)
+        return True
+    return False
+
+
+def get_pending_action_suggestions():
+    """API légère destinée au GUI : aucune exécution, uniquement des métadonnées de session."""
+    return [
+        {"id": s.suggestion_id, "label": s.label, "command": s.command}
+        for s in get_pending_suggestions()
+    ]
+
 
 def process_instruction(
     user_message
 ):
 
-    # V11.6 : une suggestion n'est jamais exécutée sans accord explicite.
+    # V11.8 : refus/annulation d'une proposition ou d'un choix en attente.
     if is_reject_suggestion_message(user_message):
         clear_pending_suggestion()
+        clear_pending_choice()
         return "Ça marche, je laisse tomber la suggestion."
 
-    if is_accept_suggestion_message(user_message):
-        suggestion = get_pending_suggestion()
-        if suggestion is None:
-            return "Je n’ai aucune suggestion en attente pour le moment."
-        command = suggestion.command
+    # Une suggestion concrète peut être choisie par clic, numéro, libellé ou
+    # validation courte (oui/vas-y). La commande canonique repasse ensuite
+    # dans toutes les validations normales.
+    suggestion_command = resolve_suggestion_message(user_message)
+    if suggestion_command:
         clear_pending_suggestion()
-        # On réinjecte la commande canonique : elle repasse dans toutes les validations normales.
-        return process_instruction(command)
+        clear_pending_choice()
+        return process_instruction(suggestion_command)
+
+    if is_accept_suggestion_message(user_message):
+        return "Je n’ai aucune suggestion en attente pour le moment."
+
+    choice_command = resolve_pending_choice(user_message)
+    if choice_command:
+        clear_pending_suggestion()
+        return process_instruction(choice_command)
+
+    contextual_command = _resolve_session_reference_command(user_message)
+    if contextual_command:
+        return process_instruction(contextual_command)
+
+    # Une nouvelle demande sans rapport invalide les anciennes suggestions.
+    clear_pending_suggestion()
+    clear_pending_choice()
 
     result = interpret_instruction(
         user_message
@@ -4567,7 +4691,12 @@ def process_instruction(
             reply.strip()
         ):
 
-            return reply.strip()
+            reply = reply.strip()
+            if _register_conversation_choices(user_message, reply):
+                suggestions = get_pending_suggestions()
+                if suggestions:
+                    return reply + "\n\n" + format_suggestions(suggestions)
+            return reply
 
         error = result.get(
             "error"
@@ -4593,6 +4722,8 @@ def process_instruction(
         )
     )
 
+    _remember_last_entity(actions, display_results)
+
     new_habits = learn_from_actions(
         activity_results
     )
@@ -4605,13 +4736,13 @@ def process_instruction(
             )
         )
 
-    suggestion = build_suggestion(
+    suggestions = build_suggestions(
         user_message,
         actions,
         display_results,
     )
-    if suggestion is not None:
-        display_results.append(format_suggestion(suggestion))
+    if suggestions:
+        display_results.append(format_suggestions(suggestions))
 
     return "\n\n".join(
         display_results
@@ -5386,6 +5517,7 @@ from controlled_local_tools import (
     extract_zip_archive as controlled_extract_zip_archive,
     undo_last_file_action as controlled_undo_last_file_action,
     inspect_file_metadata as controlled_inspect_file_metadata,
+    inspect_file_metadata_auto as controlled_inspect_file_metadata_auto,
     calculate_file_sha256 as controlled_calculate_file_sha256,
     compare_files_sha256 as controlled_compare_files_sha256,
     find_duplicate_files as controlled_find_duplicate_files,
@@ -5421,6 +5553,7 @@ CONTROLLED_LOCAL_ACTIONS = {
     "extract_zip_archive",
     "undo_last_file_action",
     "inspect_file_metadata",
+    "inspect_file_metadata_auto",
     "calculate_file_sha256",
     "compare_files_sha256",
     "find_duplicate_files",
@@ -5547,6 +5680,14 @@ def _validate_controlled_local_contract(action_data):
         if set(params) != {"file_name"}:
             return False, "Paramètres d'analyse de fichier invalides."
         if not _contract_relative_path_ok(params.get("file_name")):
+            return False, "Nom de fichier à analyser invalide."
+
+    elif action == "inspect_file_metadata_auto":
+        if target != "auto" or not isinstance(params, dict):
+            return False, "Cible d'analyse automatique invalide."
+        if set(params) != {"file_name"}:
+            return False, "Paramètres d'analyse de fichier invalides."
+        if not _contract_relative_path_ok(params.get("file_name"), simple_only=True):
             return False, "Nom de fichier à analyser invalide."
 
     elif action == "compare_files_sha256":

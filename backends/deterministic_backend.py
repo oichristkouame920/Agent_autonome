@@ -3,6 +3,7 @@ import re
 import unicodedata
 from pathlib import Path
 from project_paths import PROJECT_ROOT, get_project_path
+from project_version import AGENTLOCAL_BUILD
 
 
 # ============================================================
@@ -12,7 +13,7 @@ from project_paths import PROJECT_ROOT, get_project_path
 SCHEMA_VERSION = 1
 NATURAL_LANGUAGE_PATCH_VERSION = "2026-09-17-language-v9-speech-sphere"
 ADVANCED_SEARCH_PATCH_VERSION = "2026-09-17-v10.1-advanced-file-search"
-FIELD_LANGUAGE_PATCH_VERSION = "2026-09-17-v10.2-field-language-web-context"
+FIELD_LANGUAGE_PATCH_VERSION = AGENTLOCAL_BUILD
 
 
 # ============================================================
@@ -56,6 +57,13 @@ APPLICATION_ALIASES = {
     "internet": "edge",
     "navigateur internet": "edge",
     "navigateur web": "edge",
+
+    # Firefox
+    "firefox": "firefox",
+    "fire fox": "firefox",
+    "mozilla firefox": "firefox",
+    "mozila firefox": "firefox",
+    "mozilla": "firefox",
 
     # VS Code
     "vscode": "vscode",
@@ -355,6 +363,7 @@ VAGUE_FILESYSTEM_REFERENCES = {
     "mon dossier",
     "quelque chose",
     "un truc",
+    "truc",
     "le truc",
     "ce truc",
     "ca",
@@ -526,14 +535,24 @@ def get_extension_chain(
 
 BLOCKED_EXECUTION_TARGET_NAMES = {
     "powershell",
+    "powershel",
+    "powershell.exe",
+    "pwsh",
+    "pwsh.exe",
     "power shell",
     "cmd",
+    "cmd.exe",
     "invite de commandes",
     "invite de commande",
     "terminal",
+    "terminal windows",
     "windows terminal",
+    "wt",
+    "wt.exe",
     "bash",
+    "bash.exe",
     "wsl",
+    "wsl.exe",
 }
 
 
@@ -638,6 +657,7 @@ WEBSITE_ALIASES = {
 
     "whatsapp": "whatsapp",
     "whats app": "whatsapp",
+    "whatsap": "whatsapp",
 
     "udmci": "udmci",
 }
@@ -1201,6 +1221,19 @@ def _rewrite_indirect_natural_request(text):
         if normalize_application_target(candidate):
             return f"verifie si {candidate} est ouvert"
 
+    # V11.8 : consultations de racines et captures formulees naturellement.
+    normalized_value = normalize_text(value).strip(" .!?")
+    if re.fullmatch(r"(?:liste|montre|affiche)\s+tout\s+ce\s+que\s+j[' ]ai\s+dans\s+(?:mes\s+)?documents", normalized_value):
+        return "liste Documents"
+    if normalized_value in {"liste le dossier images", "liste dossier images", "montre le dossier images"}:
+        return "liste Images"
+    if normalized_value in {
+        "liste mes captures d'ecran", "liste mes captures ecran",
+        "montre mes captures d'ecran", "montre mes captures ecran",
+        "ouvre mes captures d'ecran", "ouvre mes captures ecran",
+    }:
+        return "liste Images\\Captures AgentLocal"
+
     # Deplacement conversationnel. On garde exactement la meme restriction
     # que la commande "deplace ... dans ..." existante.
     match = re.fullmatch(
@@ -1243,6 +1276,7 @@ def _looks_like_known_multi_target_request(value):
 
 
 def _looks_like_forbidden_execution_target(value):
+    """Reconnaît aussi un exécutable interdit fourni par chemin ou avec une petite faute connue."""
     normalized = normalize_text(value)
     if not normalized:
         return False
@@ -1253,7 +1287,17 @@ def _looks_like_forbidden_execution_target(value):
         count=1,
         flags=re.IGNORECASE,
     ).strip()
-    return normalized in BLOCKED_EXECUTION_TARGET_NAMES
+
+    # Une cible peut être donnée comme chemin Windows complet. On ne résout
+    # jamais ce chemin : on ne fait qu'en extraire le dernier composant pour
+    # appliquer la liste de blocage avant toute recherche de fichier.
+    leaf = re.split(r"[\\/]", normalized)[-1].strip()
+    leaf = re.sub(r"[\s,;:!?.]+$", "", leaf)
+    if normalized in BLOCKED_EXECUTION_TARGET_NAMES or leaf in BLOCKED_EXECUTION_TARGET_NAMES:
+        return True
+
+    # Tolérance fermée pour les variantes réellement observées sur le terrain.
+    return leaf in {"powershel", "powershell", "powershell.exe", "cmd", "cmd.exe", "pwsh", "pwsh.exe", "bash", "bash.exe", "wsl", "wsl.exe", "wt", "wt.exe"}
 
 
 def _contains_forbidden_execution_target(value):
@@ -1341,6 +1385,7 @@ def _is_explicit_negative_request(text):
         r"^(?:il\s+)?faut\s+pas\b",
         r"^pas\s+la\s+peine\b",
         r"^je\s+(?:ne\s+)?veux\s+pas\b",
+        r"^(?:ne\s+)?touche\s+pas\s+(?:a|aux)\s+(?:mes|les)\s+fichiers?\b",
         r"^n[' ]?(?:ouvre|lance|demarre|ferme|verifie|teste|mesure|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active|capture|prends|prend|fais|fait|monte|augmente|hausse|baisse|diminue|coupe|remets|retablis|regle|regler|compresse|zippe|archive|extrais|decompresse|annule|cherche|trouve|retrouve|compare|calcule)\s+pas\b",
         r"^ne\s+(?:ouvre|lance|demarre|ferme|verifie|teste|mesure|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active|capture|prends|prend|fais|fait|monte|augmente|hausse|baisse|diminue|coupe|remets|retablis|regle|regler|compresse|zippe|archive|extrais|decompresse|annule|cherche|trouve|retrouve|compare|calcule)\s+pas\b",
         r"^(?:ouvre|lance|demarre|ferme|verifie|teste|mesure|agrandis|reduis|supprime|efface|deplace|copie|renomme|va|aller|mets|met|lis|lire|montre|affiche|regarde|passe|active|capture|prends|prend|fais|fait|monte|augmente|hausse|baisse|diminue|coupe|remets|retablis|regle|regler|compresse|zippe|archive|extrais|decompresse|annule|cherche|trouve|retrouve|compare|calcule)\s+pas\b",
@@ -1393,7 +1438,7 @@ def _looks_like_spoken_safe_context(text):
 
 
 def _is_explicit_forbidden_execution_request(text):
-    """Reconnait une demande explicite visant un shell interdit, y compris en langage oral."""
+    """Bloque un shell interdit avant le parseur, même dans une phrase insistante ou un chemin."""
     value = str(text or "").strip()
     if not value:
         return False
@@ -1404,14 +1449,26 @@ def _is_explicit_forbidden_execution_request(text):
     value = _rewrite_natural_command_start(value)
     normalized = normalize_text(value).strip(" .!?")
 
-    match = re.match(
-        r"^(?:ouvre|ouvrir|lance|lancer|demarre|demarrer|ferme|fermer|quitte|quitter)\s+(.+)$",
+    # Il faut une intention d'exécution/fermeture explicite ; la simple mention
+    # de PowerShell dans une phrase ne suffit pas à déclencher ce filtre.
+    action_match = re.search(
+        r"\b(?:ouvre|ouvrir|lance|lancer|demarre|demarrer|execute|executer|ferme|fermer|quitte|quitter)\s+(.+)$",
         normalized,
     )
-    if not match:
+    if not action_match:
         return False
 
-    return _contains_forbidden_execution_target(match.group(1).strip())
+    target_text = action_match.group(1).strip()
+    if _contains_forbidden_execution_target(target_text):
+        return True
+
+    # Cas chemin complet ou texte coercitif après la cible.
+    forbidden_tokens = (
+        r"powershel(?:l)?(?:\.exe)?", r"pwsh(?:\.exe)?", r"cmd(?:\.exe)?",
+        r"bash(?:\.exe)?", r"wsl(?:\.exe)?", r"(?:windows\s+terminal|terminal\s+windows|wt(?:\.exe)?)",
+        r"invite\s+de\s+commandes?",
+    )
+    return any(re.search(rf"(?:^|[\\/\s]){token}(?:$|[\s,;:!?.])", target_text) for token in forbidden_tokens)
 
 
 def _is_ambiguous_spoken_destructive_request(text):
@@ -1490,6 +1547,26 @@ def _rewrite_casual_grammar(text):
     return value.strip()
 
 
+def _apply_v118_safe_typos(value):
+    """Corrige uniquement des fautes de commande/alias connues, jamais un contenu litteral."""
+    text = str(value or "")
+    if not text or _has_literal_content_payload(text):
+        return text
+    # Verbes de commande observes sur le terrain.
+    text = re.sub(r"^\s*ouvrre\b", "ouvre", text, count=1, flags=re.IGNORECASE)
+    text = re.sub(r"^\s*ouver\b", "ouvre", text, count=1, flags=re.IGNORECASE)
+    text = re.sub(r"^\s*lsite\b", "liste", text, count=1, flags=re.IGNORECASE)
+    # Petites fautes lexicales fermees.
+    text = re.sub(r"\bfhichiers?\b", lambda m: "fichiers" if m.group(0).lower().endswith("s") else "fichier", text, flags=re.IGNORECASE)
+    text = re.sub(r"\blew\s+(fichiers?|documents?)\b", r"les \1", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bletat\s+du\s+pc\b", "l'etat du pc", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bexcem\b", "excel", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bfire\s+fox\b", "firefox", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bmozila\s+firefox\b", "mozilla firefox", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bwhatsap\b", "whatsapp", text, flags=re.IGNORECASE)
+    return text
+
+
 def build_natural_command_variants(user_message):
     """
     Produit des variantes plus naturelles, mais uniquement comme secours
@@ -1525,7 +1602,17 @@ def build_natural_command_variants(user_message):
         direct_question = direct_question.rstrip(" .!?").strip()
     add(direct_question)
 
-    value = _rewrite_casual_grammar(original)
+    typo_direct = _apply_v118_safe_typos(original)
+    if not _has_literal_content_payload(typo_direct):
+        typo_direct = re.sub(r"^\s*lsite\b", "liste", typo_direct, count=1, flags=re.IGNORECASE)
+        typo_direct = re.sub(r"\bfhichiers?\b", lambda m: "fichiers" if m.group(0).lower().endswith("s") else "fichier", typo_direct, flags=re.IGNORECASE)
+        typo_direct = re.sub(r"^\s*liste\s+tout\s+mes\s+fichiers\b", "liste tous mes fichiers", typo_direct, count=1, flags=re.IGNORECASE)
+    add(typo_direct)
+
+    value = _rewrite_casual_grammar(_apply_v118_safe_typos(original))
+    if not _has_literal_content_payload(value):
+        value = re.sub(r"^\s*lsite\b", "liste", value, count=1, flags=re.IGNORECASE)
+        value = re.sub(r"\bfhichiers?\b", lambda m: "fichiers" if m.group(0).lower().endswith("s") else "fichier", value, flags=re.IGNORECASE)
     value = _rewrite_indirect_natural_request(value)
     value = _strip_natural_leading_wrappers(value)
     if _looks_like_spoken_safe_context(value):
@@ -4754,6 +4841,18 @@ def parse_list_directory_recursive(user_message):
     if root and relative:
         return [make_action("list_directory", root, {"relative_path": relative})]
 
+    # V11.8 : « liste le dossier Images/Documents/... » vise la racine
+    # utilisateur elle-même, pas une recherche d'un sous-dossier homonyme.
+    root_match = re.fullmatch(
+        r"\s*(?:liste|lister|affiche|afficher|montre|montrer)\s+(?:le\s+)?dossier\s+([^\/]+?)\s*[.!?]?\s*",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if root_match:
+        root = normalize_file_root(root_match.group(1).strip())
+        if root:
+            return [make_action("list_directory", root)]
+
     # liste le dossier Cours (recherche unique puis listing)
     match = re.fullmatch(
         r"\s*(?:liste|lister|affiche|afficher|montre|montrer)\s+(?:le\s+)?dossier\s+([^\\/]+?)\s*[.!?]?\s*",
@@ -4923,6 +5022,29 @@ def parse_create_folder_recursive(user_message):
 
 def parse_create_file_recursive(user_message):
     raw = user_message.strip().replace("’", "'")
+
+    # V11.7 terrain : création explicite d'un fichier vide. On réutilise la
+    # même action contrôlée avec une chaîne vide ; aucun nouveau droit n'est
+    # accordé et aucun écrasement n'est possible.
+    empty_patterns = [
+        r"\s*(?:crée|cree|créer|creer|prépare|prepare|préparer|preparer)\s+(?:(?:le|un)\s+fichier\s+)?(.+?)\s+dans\s+(.+?)\s*[.!?]?\s*",
+        r"\s*(.+?)\s*[,]\s*(?:crée|cree|créer|creer|prépare|prepare|préparer|preparer)\s+(?:(?:le|un)\s+fichier\s+)?([^\\/]+?)\s*[.!?]?\s*",
+    ]
+    for index, pattern in enumerate(empty_patterns):
+        match = re.fullmatch(pattern, raw, flags=re.IGNORECASE)
+        if not match:
+            continue
+        if index == 0:
+            file_part = match.group(1).strip()
+            location = match.group(2).strip()
+        else:
+            location = match.group(1).strip()
+            file_part = match.group(2).strip()
+        root, parent = _parse_root_location(location)
+        if root and parent and _safe_relative_path_syntax(file_part):
+            relative = _join_relative(parent, file_part)
+            return [make_action("create_file_with_content", root, {"file_name": relative, "content": ""})]
+
     patterns = [
         r"\s*(?:crée|cree|créer|creer)\s+(?:(?:le|un)\s+fichier\s+)?(.+?)\s+dans\s+(.+?)\s+avec\s+le\s+contenu\s*:?[ \t]*(.+?)\s*",
         r"\s*(?:crée|cree|créer|creer)\s+(?:(?:le|un)\s+fichier\s+)?(.+?)\s+dans\s+(.+?)\s+contenant\s*:?[ \t]*(.+?)\s*",
@@ -5217,7 +5339,7 @@ def parse_close_directory_natural(user_message):
     raw = str(user_message or "").strip().replace("’", "'")
 
     match = re.fullmatch(
-        r"\s*(?:ferme|fermer)\s+(?:le\s+)?dossier\s+([^\\/]+?)\s*[.!?]?\s*",
+        r"\s*(?:ferme|fermer)\s+(?:(?:le\s+)?dossier\s+|(?:la\s+)?fen[eê]tre\s+(?:(?:du|de)\s+dossier\s+)?)([^\\/]+?)\s*[.!?]?\s*",
         raw,
         flags=re.IGNORECASE,
     )
@@ -5225,7 +5347,7 @@ def parse_close_directory_natural(user_message):
         return []
 
     name = match.group(1).strip()
-    if not _safe_relative_path_syntax(name):
+    if is_vague_filesystem_reference(name) or not _safe_relative_path_syntax(name):
         return []
     return [make_action("close_directory_auto", "auto", {"directory_name": name})]
 
@@ -5273,6 +5395,7 @@ def parse_open_directory_natural(user_message):
         r"\s*(?:ouvre|ouvrir)\s+(?:le\s+)?dossier\s+([^\\/]+?)\s*[.!?]?\s*",
         r"\s*(?:acc(?:e|\u00e8)de|acc(?:e|\u00e8)der)\s+(?:au|a|\u00e0)\s+(?:le\s+)?dossier\s+([^\\/]+?)\s*[.!?]?\s*",
         r"\s*(?:va|aller|entre|entrer)\s+dans\s+(?:le\s+)?dossier\s+([^\\/]+?)\s*[.!?]?\s*",
+        r"\s*(?:va|aller|entre|entrer)\s+dans\s+([^\\/]+?)\s*[.!?]?\s*",
     ]
 
     for pattern in auto_patterns:
@@ -5503,10 +5626,12 @@ def _looks_like_advanced_file_search(text):
         r"\b(?:derniers?|plus\s+recents?)\s+(?:fichiers?|documents?)\b",
         r"\b(?:fichiers?|documents?)\s+(?:les\s+)?plus\s+recents?\b",
         r"\b(?:fichiers?|documents?)\s+(?:les\s+)?plus\s+(?:gros|volumineux)\b",
+        r"\b(?:les\s+)?plus\s+(?:gros|volumineux)\s+(?:fichiers?|documents?)\b",
         r"\b(?:plus|moins)\s+de\s+\d+(?:[.,]\d+)?\s*(?:ko|kb|mo|mb|go|gb)\b",
         r"\bfichiers?\s+(?:word|excel|power\s*point|powerpoint|pdf)\b",
         r"\b(?:fichiers?|documents?)\s+(?:en\s+)?\.?(?:txt|md|markdown|csv|json)\b",
         r"\b(?:les|mes|des)\s+(?:pdf|images?|photos?|videos?|fichiers?\s+audio|fichiers?\s+texte)\b",
+        r"\b(?:tous?|tout)\s+(?:mes|les)\s+fichiers?\b",
         r"\bcombien\b.*\b(?:fichiers?|documents?|pdf|images?|photos?|videos?|word|excel)\b",
         r"\btelecharge(?:s|e|es)?\b",
     )
@@ -5559,11 +5684,15 @@ def parse_recursive_filesystem_command(user_message):
         parse_open_directory_natural,
         parse_open_file_natural,
         parse_access_directory_natural,
+        # Les commandes de creation positionnelles (ex.
+        # « Documents\\Dossier, cree test.txt ») doivent etre testees avant
+        # le listing generique de chemin, sinon la virgule peut etre prise pour
+        # une partie du nom de dossier.
+        parse_create_file_recursive,
         parse_find_filesystem_item_recursive,
         parse_list_directory_recursive,
         parse_read_file_recursive,
         parse_create_folder_recursive,
-        parse_create_file_recursive,
         parse_modify_file_recursive,
         parse_rename_file_recursive,
         parse_delete_file_recursive,
@@ -5804,6 +5933,19 @@ def parse_controlled_local_command(user_message):
             if root and file_name and not is_vague_filesystem_reference(file_name):
                 return [make_action("inspect_file_metadata", root, {"file_name": file_name})]
 
+    # V11.8 : si aucune racine n'est donnée, on autorise seulement une
+    # résolution unique dans les racines déjà autorisées. Aucun choix automatique
+    # n'est fait en cas d'homonyme.
+    match = re.fullmatch(
+        r"(?:donne|donner|montre|montrer|affiche|afficher)\s+(?:moi\s+)?(?:les\s+)?(?:infos|informations|details|détails)\s+(?:du\s+fichier\s+|de\s+)?(.+)",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        file_name = match.group(1).strip()
+        if file_name and not is_vague_filesystem_reference(file_name):
+            return [make_action("inspect_file_metadata_auto", "auto", {"file_name": file_name})]
+
     hash_patterns = (
         rf"(?:calcule|calculer|donne|donner|montre|montrer)\s+(?:moi\s+)?(?:le\s+)?(?:sha[- ]?256|hash|empreinte\s+sha[- ]?256)\s+(?:du\s+fichier\s+|de\s+)?(.+?)\s+(?:dans|sur)\s+(?:(?:mes|mon|ma|le|la|les)\s+)?{root_pattern}",
         rf"(?:sha[- ]?256|hash)\s+(?:du\s+fichier\s+|de\s+)?(.+?)\s+(?:dans|sur)\s+(?:(?:mes|mon|ma|le|la|les)\s+)?{root_pattern}",
@@ -5908,10 +6050,12 @@ def parse_controlled_local_command(user_message):
     # Une valeur finale explicite est prioritaire sur la notion de montée/baisse.
     match = re.fullmatch(
         r"(?:mets|met|regle|regler|fixe|fixer|monte|augmente|baisse|diminue) "
-        r"(?:le )?(?:volume|son) (?:a|sur) (\d{1,3})(?:\s*%|\s*pour cent)?",
-        plain,
+        r"(?:le )?(?:volume|son) (?:a|sur) ([+-]?\d{1,4})(?:\s*%|\s*pour cent)?",
+        text,
     )
     if match:
+        # Ne jamais perdre le signe. Une valeur hors 0..100 n'est pas exécutée ;
+        # parse_local_conversation() renverra ensuite une explication précise.
         percent = int(match.group(1))
         if 0 <= percent <= 100:
             return [make_action("set_audio_volume", "master", {"percent": percent})]
@@ -6011,7 +6155,8 @@ def parse_controlled_local_command(user_message):
     # Réseau - lecture seule, sans test Internet externe
     # --------------------------------------------------------
     network_status_patterns = (
-        r"(?:mon )?reseau (?:est il |il est |est )?(?:actif|connecte|ok)",
+        r"(?:mon )?reseau (?:est il |il est |est )?(?:actif|connecte|ok|fonctionne)",
+        r"(?:est ce que )?(?:mon )?reseau fonctionne",
         r"(?:je suis|le pc est|mon pc est) connecte(?: au reseau)?",
         r"(?:verifie|regarde|dis moi) (?:si )?(?:mon )?reseau (?:est )?(?:actif|connecte|ok)",
         r"(?:etat|statut) (?:du )?reseau",
@@ -6221,6 +6366,18 @@ def parse_controlled_local_command(user_message):
         if site and site not in {"ca", "cela", "ceci", "le", "la", "lui"}:
             return [make_action("activate_browser_tab", site)]
 
+    match = re.fullmatch(
+        r"(?:passe|passer|active|activer|bascule|basculer)\s+(?:moi\s+)?sur\s+(.+)",
+        text,
+    )
+    if match:
+        site = match.group(1).strip()
+        website = normalize_website_target(site)
+        # Une cible également connue comme application (ex. Teams) conserve
+        # la priorité historique de gestion de fenêtre.
+        if website and not normalize_application_target(site):
+            return [make_action("activate_browser_tab", website)]
+
     # --------------------------------------------------------
     # Choix explicite dans les résultats numérotés de la dernière recherche
     # --------------------------------------------------------
@@ -6324,7 +6481,7 @@ def parse_local_conversation(user_message):
         return None
 
     # Salutations et prise de contact.
-    if re.fullmatch(r"(?:bonjour|salut|coucou|hello|bonsoir)(?:\s+(?:agent|agentlocal))?", text):
+    if re.fullmatch(r"(?:bonjour|salut|coucou|hello|bonsoir)(?:\s+(?:chef|frere|mon\s+gars|agent|agentlocal))?(?:\s+tu\s+es(?:\s+la)?)?", text):
         if text.startswith("bonsoir"):
             return "Bonsoir ! Je suis là. Dis-moi ce qu’on fait."
         return "Bonjour ! Je suis là. Dis-moi ce qu’on fait."
@@ -6371,6 +6528,7 @@ def parse_local_conversation(user_message):
     # Refus volontaire des delegations trop vagues : plus de langage, pas plus d'autonomie.
     if text in {
         "fais ce qu'il faut", "fais ce qu il faut", "gere ca", "gere moi ca",
+        "tu peux gerer un truc pour moi", "tu peux gerer quelque chose pour moi",
         "debrouille toi", "debrouille-toi", "fais comme tu veux", "prends la main",
         "fais tout", "occupe toi de ca", "occupe-toi de ca", "arrange ca",
     }:
@@ -6460,6 +6618,42 @@ def parse_local_conversation(user_message):
             "Par exemple : « cree document.txt dans Documents avec le contenu Bonjour »."
         )
 
+    invalid_volume = re.fullmatch(
+        r"(?:mets|met|regle|regler|fixe|fixer|monte|augmente|baisse|diminue) "
+        r"(?:le )?(?:volume|son) (?:a|sur) ([+-]?\d{1,4})(?:\s*%|\s*pour cent)?",
+        text,
+    )
+    if invalid_volume:
+        value = int(invalid_volume.group(1))
+        if value < 0 or value > 100:
+            return (
+                f"Le volume demandé ({value}%) est invalide. "
+                "Indique une valeur comprise entre 0% et 100%."
+            )
+
+    # Archives sans racine explicite : on ne devine jamais le dossier source.
+    zip_match = re.fullmatch(
+        r"(?:compresse|zippe|archive)\s+(.+?)\s+(?:en|vers|sous le nom de|nomme|appele)\s+([^\\/]+?\.zip)",
+        text,
+    )
+    if zip_match:
+        return (
+            "J’ai compris la compression, mais indique la racine du dossier pour éviter de choisir un homonyme. "
+            f"Par exemple : « compresse {zip_match.group(1)} dans Documents en {zip_match.group(2)} »."
+        )
+
+    # Forme terrain : « Documents\\Dossier, crée test.txt ». La création de
+    # fichiers vides reste volontairement bloquée ; on demande seulement le contenu.
+    empty_create = re.fullmatch(
+        r"(?:documents?|bureau|telechargements?|images?|videos?|musique)(?:\\[^,]+)?\s*,?\s*(?:cree|creer|prepare|preparer)\s+([^\\/]+)",
+        text,
+    )
+    if empty_create:
+        return (
+            "Je peux créer ce fichier, mais indique aussi son contenu pour éviter de créer un fichier vide par erreur. "
+            f"Par exemple : « crée {empty_create.group(1)} dans Documents avec le contenu Bonjour »."
+        )
+
     if text in {
         "pourquoi tu refuses", "pourquoi tu refuses ca", "pourquoi tu bloques",
         "pourquoi tu ne fais pas", "pourquoi tu n executes pas", "pourquoi tu n'execute pas",
@@ -6502,6 +6696,28 @@ def _is_clipboard_execution_request(text):
         r"\b(?:ouvre|ouvrir|lance|lancer|execute|executer|demarre|demarrer|va sur|navigue vers)\b",
         value,
     ))
+
+
+def _mass_action_conversation_reply(text):
+    """Intercepte les opérations de masse avant tout parseur destructif."""
+    value = normalize_text(text).replace("-", " ").strip(" .!?")
+    value = re.sub(r"\s+", " ", value)
+    if re.fullmatch(r"(?:ouvre|ouvrir)\s+(?:tous?|toutes?)\s+(?:les\s+)?fichiers?\s+(?:trouves?|resultats?)", value):
+        return (
+            "Je n'ouvre pas tous les résultats en masse. Choisis un résultat précis, "
+            "par exemple « ouvre le premier » ou « ouvre le 2 »."
+        )
+    if re.fullmatch(r"(?:supprime|supprimer|efface|effacer)\s+(?:tous?|toutes?)\s+(?:les\s+)?(?:gros|grands|volumineux)\s+fichiers?", value):
+        return (
+            "Je ne supprime pas des fichiers en masse. Je peux d'abord afficher les plus gros fichiers, "
+            "puis tu me donnes un fichier précis à envoyer à la Corbeille."
+        )
+    if re.fullmatch(r"(?:deplace|deplacer|bouge|bouger)\s+(?:tous?|toutes?)\s+(?:les\s+)?(?:pdf|fichiers?\s+pdf)", value):
+        return (
+            "Je ne déplace pas des PDF en masse automatiquement. Indique un fichier précis et sa destination ; "
+            "je garderai les contrôles de sécurité habituels."
+        )
+    return None
 
 
 def interpret(user_message):
@@ -6552,6 +6768,17 @@ def interpret(user_message):
                 "Je peux lire ou écrire du texte dans le presse-papiers sur demande, "
                 "mais je n'exécute et je n'ouvre jamais automatiquement son contenu."
             ),
+            "conversation": True,
+        }
+
+    mass_reply = _mass_action_conversation_reply(original_message)
+    if mass_reply:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "backend": "deterministic",
+            "understood": True,
+            "actions": [],
+            "reply": mass_reply,
             "conversation": True,
         }
 

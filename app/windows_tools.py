@@ -108,6 +108,10 @@ PROCESS_MAP = {
         "msedge.exe",
     ),
 
+    "firefox": (
+        "firefox.exe",
+    ),
+
     "vscode": (
         "code.exe",
     ),
@@ -215,6 +219,10 @@ PROCESS_MAP = {
 
 DISPLAY_NAMES = {
     "edge": "Microsoft Edge",
+
+    "firefox": (
+        "Mozilla Firefox"
+    ),
 
     "vscode": (
         "Visual Studio Code"
@@ -1192,6 +1200,30 @@ def get_application_candidates(
             "Edge",
             "Application",
             "msedge.exe"
+        )
+
+    # ========================================================
+    # FIREFOX
+    # ========================================================
+
+    elif app_name == "firefox":
+
+        for base in (
+            program_files,
+            program_files_x86,
+        ):
+            add_candidate(
+                candidates,
+                base,
+                "Mozilla Firefox",
+                "firefox.exe"
+            )
+
+        add_candidate(
+            candidates,
+            local_app_data,
+            "Mozilla Firefox",
+            "firefox.exe"
         )
 
     # ========================================================

@@ -58,6 +58,17 @@
       "allow_close_from_routine": false,
       "allow_close_from_habit": false
     },
+    "firefox": {
+      "enabled": true,
+      "can_check": true,
+      "can_open": true,
+      "can_close": true,
+      "scope": "manual",
+      "allow_from_routine": false,
+      "allow_from_habit": false,
+      "allow_close_from_routine": false,
+      "allow_close_from_habit": false
+    },
     "vscode": {
       "enabled": true,
       "can_check": true,
@@ -1031,6 +1042,7 @@
     ],
     "allowed_applications": [
       "edge",
+      "firefox",
       "vscode",
       "explorer",
       "android_studio",
