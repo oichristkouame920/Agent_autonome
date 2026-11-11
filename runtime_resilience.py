@@ -145,12 +145,21 @@ def startup_health_report() -> dict:
             }
         )
         llama_ok = bool(status.get("llama_available"))
+        llama_status = status.get("llama_status") or {}
+        probe = llama_status.get("runtime_probe") or {}
+        probe_state = str(probe.get("state") or "")
+        if llama_ok and probe_state == "slow_ready":
+            llama_detail = "disponible - demarrage lent valide par seconde sonde"
+        elif llama_ok:
+            llama_detail = "disponible"
+        else:
+            llama_detail = "indisponible - mode deterministe possible"
         checks.append(
             {
                 "name": "backend LLM local",
                 "status": "ok" if llama_ok else "warning",
                 "critical": False,
-                "detail": "disponible" if llama_ok else "indisponible - mode deterministe possible",
+                "detail": llama_detail,
             }
         )
     except Exception as exc:

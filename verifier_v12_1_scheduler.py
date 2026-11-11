@@ -13,7 +13,7 @@ for path in (ROOT, APP):
 from backends.deterministic_backend import interpret
 from project_version import AGENTLOCAL_VERSION, AGENTLOCAL_BUILD
 
-assert AGENTLOCAL_VERSION == "12.1"
+assert AGENTLOCAL_VERSION == "12.3"
 assert "scheduler" in AGENTLOCAL_BUILD
 assert (ROOT / "app/scheduler.py").is_file()
 

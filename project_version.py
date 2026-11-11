@@ -1,10 +1,6 @@
-"""Version centrale du projet AgentLocal.
+"""Version centrale du projet AgentLocal."""
 
-Ce fichier sert de source de verite legere pour les composants qui doivent
-annoncer la meme version sans dupliquer la chaine dans plusieurs modules.
-"""
-
-AGENTLOCAL_VERSION = "12.1"
-AGENTLOCAL_BUILD = "2026-11-11-v12.1-r4-deep-hardening-connected-services-controlled-scheduler-atomic-updater"
-AGENTLOCAL_CHANNEL = "controlled-scheduler-r4"
+AGENTLOCAL_VERSION = "12.3"
+AGENTLOCAL_BUILD = "2026-11-11-v12.2-deep-hardening-visual-alerts-first-unlock-morning-automation-connected-services-controlled-scheduler-llm-adaptive-warm-local-server-v12.2.1-v12.2.2-windows-autostart-single-instance-background-alerts-v12.3-ux-premium-daily-quotes-emoji-mini-cards"
+AGENTLOCAL_CHANNEL = "ux-premium-visual-automation-llm-adaptive-autostart-v12.3"
 SCHEMA_COMPAT_VERSION = 1

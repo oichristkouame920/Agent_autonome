@@ -385,7 +385,11 @@ def read_system_info(query: str, explicit_user_command=False, source="manual"):
             status = get_backend_status()
             selected = status.get("selected") or "indisponible"
             llama = "disponible" if status.get("llama_available") else "indisponible"
-            pieces.append(f"backend actif : {selected} ; LLM local : {llama}")
+            llama_status = status.get("llama_status") or {}
+            warm_configured = bool(llama_status.get("warm_server_configured"))
+            warm_running = bool(llama_status.get("warm_server_running"))
+            warm_text = "serveur chaud actif" if warm_running else ("serveur chaud prêt" if warm_configured else "mode CLI")
+            pieces.append(f"backend actif : {selected} ; LLM local : {llama} ; {warm_text}")
         except Exception:
             pass
         if not pieces:

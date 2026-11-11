@@ -12,9 +12,12 @@ status = llama_backend.get_status()
 print("Modèle actif :", status.get("active_model"))
 print("Chemin modèle :", status.get("model_path"))
 print("llama-cli :", status.get("llama_cli"))
+print("llama-server :", status.get("warm_server_binary"))
 print("Contexte :", status.get("context_size"))
 print("Threads :", status.get("threads"))
 print("LLM disponible :", "oui" if status.get("available") else "non")
+print("Sonde runtime :", (status.get("runtime_probe") or {}).get("state"))
+print("Serveur chaud configure :", "oui" if status.get("warm_server_configured") else "non")
 if status.get("reason"):
     print("Information :", status["reason"])
 

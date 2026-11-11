@@ -13,7 +13,7 @@ from project_version import AGENTLOCAL_BUILD, AGENTLOCAL_VERSION
 import scheduler
 import connected_services as cs
 
-assert AGENTLOCAL_VERSION == "12.1"
+assert AGENTLOCAL_VERSION == "12.3"
 assert "deep-hardening" in AGENTLOCAL_BUILD
 assert scheduler.MAX_SCHEDULES <= 64
 assert scheduler.ALLOWED_KINDS == {"routine", "briefing", "habit_summary"}

@@ -1310,5 +1310,26 @@
     "execute_only_while_agentlocal_running": true,
     "maximum_schedules": 20,
     "catch_up_minutes": 60
+  },
+  "morning_automation_policy": {
+    "enabled": true,
+    "trigger": "first_unlock_seen",
+    "allowed_actions": [
+      "system_health",
+      "pending_tasks",
+      "briefing"
+    ],
+    "allow_destructive_actions": false,
+    "allow_process_termination": false,
+    "allow_file_deletion": false,
+    "allow_shell": false,
+    "show_alerts": true
+  },
+  "alert_policy": {
+    "enabled": true,
+    "persist_local": true,
+    "allow_automatic_remediation": false,
+    "allow_process_termination": false,
+    "allow_file_deletion": false
   }
 }

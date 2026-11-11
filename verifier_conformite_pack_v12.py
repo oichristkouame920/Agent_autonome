@@ -31,13 +31,18 @@ critical_files = [
     "app/windows_tools.py",
     "backends/deterministic_backend.py",
     "backends/backend_manager.py",
+    "backends/llama_backend.py",
     "config/permissions.json",
     "config/sites.json",
     "config/routines.json",
     "config/browser_bridge.json",
     "config/connected_services.json",
+    "config/automation.json",
     "app/connected_services.py",
     "app/scheduler.py",
+    "app/alerts.py",
+    "app/system_monitor.py",
+    "app/morning_automation.py",
     "browser_extension/manifest.json",
     "browser_extension/background.js",
     "browser_extension/bridge_config.js",
@@ -45,14 +50,25 @@ critical_files = [
     "AgentLocal.bat",
     "tester_agentlocal.ps1",
     "project_version.py",
+    "upgrade_llm_config_v12_2_1.py",
+    "app/windows_startup.py",
+    "app/single_instance.py",
+    "app/daily_quotes.py",
+    "app/response_style.py",
+    "config/quotes.json",
+    "configure_windows_startup_v12_2_2.py",
+    "upgrade_automation_config_v12_2_2.py",
 ]
 for relative in critical_files:
     check((ROOT / relative).is_file(), f"Fichier critique manquant : {relative}")
 
 # 2) Source de vérité de version.
-check(AGENTLOCAL_VERSION == "12.1", "Version centrale inattendue")
+check(AGENTLOCAL_VERSION == "12.3", "Version centrale inattendue")
 check(SCHEMA_COMPAT_VERSION == 1, "Schéma de compatibilité inattendu")
 check(FIELD_LANGUAGE_PATCH_VERSION == AGENTLOCAL_BUILD, "Backend déterministe non aligné sur le build courant")
+check("llm-adaptive" in AGENTLOCAL_BUILD, "Build LLM adaptatif absent")
+check("v12.2.2-windows-autostart" in AGENTLOCAL_BUILD, "Build démarrage Windows absent")
+check("v12.3-ux-premium" in AGENTLOCAL_BUILD, "Build UX Premium V12.3 absent")
 
 # 3) Tous les JSON de configuration doivent être valides.
 for path in sorted((ROOT / "config").glob("*.json")):
@@ -158,4 +174,11 @@ check(scheduler_policy.get("require_explicit_confirmation") is True, "Planificat
 check(scheduler_policy.get("allow_arbitrary_commands") is False, "Planificateur autorise des commandes arbitraires")
 check(scheduler_policy.get("allow_destructive_actions") is False, "Planificateur autorise des actions destructives")
 
-print("Conformité pack AgentLocal V12.1 : OK")
+automation = json.loads((ROOT / "config/automation.json").read_text(encoding="utf-8-sig"))
+morning = automation.get("morning_automation", {})
+health = automation.get("health_monitor", {})
+check(morning.get("start_time") == "07:00" and morning.get("end_time") == "09:30", "Fenetre matinale V12.2 invalide")
+check(morning.get("trigger") == "first_unlock_seen", "Declencheur matinal V12.2 invalide")
+check(health.get("ram_warning_percent") == 80 and health.get("ram_critical_percent") == 92, "Seuils RAM V12.2 invalides")
+
+print("Conformité pack AgentLocal V12.3 : OK")

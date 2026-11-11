@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+
+  "agent": {
+    "name": "AgentLocal",
+    "language": "fr"
+  },
+
+  "backend": {
+    "mode": "auto",
+    "preferred": "llama",
+    "fallback": "deterministic"
+  },
+
+  "learning": {
+    "enabled": true
+  },
+
+  "security": {
+    "allow_shell": false,
+    "allow_arbitrary_commands": false,
+    "allow_filesystem": true
+  }
+}

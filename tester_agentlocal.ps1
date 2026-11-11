@@ -16,11 +16,25 @@ Write-Host "=== 0. CONTROLE STRUCTUREL ==="
 $requiredFiles = @(
     "project_version.py",
     "backends\deterministic_backend.py",
+    "backends\llama_backend.py",
     "config\permissions.json",
     "config\connected_services.json",
+    "config\automation.json",
     "app\connected_services.py",
     "app\scheduler.py",
-    "app\gui.py"
+    "app\alerts.py",
+    "app\system_monitor.py",
+    "app\morning_automation.py",
+    "app\gui.py",
+    "upgrade_llm_config_v12_2_1.py",
+    "app\windows_startup.py",
+    "app\single_instance.py",
+    "app\daily_quotes.py",
+    "app\response_style.py",
+    "config\quotes.json",
+    "verifier_v12_3_ux_premium.py",
+    "configure_windows_startup_v12_2_2.py",
+    "upgrade_automation_config_v12_2_2.py"
 )
 foreach ($rel in $requiredFiles) {
     $target = Join-Path $PSScriptRoot $rel

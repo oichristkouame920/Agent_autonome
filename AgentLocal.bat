@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 title AgentLocal - Lanceur unique
 
-rem AgentLocal V12.1 R4 - point d'entree utilisateur unique.
+rem AgentLocal V12.3 - point d'entree utilisateur unique.
 rem Les anciens .bat sont archives automatiquement au premier lancement.
 call :ARCHIVE_LEGACY >nul 2>&1
 
@@ -49,6 +49,8 @@ shift
 if /I "%CMD%"=="start" goto LAUNCH
 if /I "%CMD%"=="launch" goto LAUNCH
 if /I "%CMD%"=="gui" goto LAUNCH
+if /I "%CMD%"=="autostart" goto AUTOSTART
+if /I "%CMD%"=="background" goto AUTOSTART
 if /I "%CMD%"=="diag" goto DIAG
 if /I "%CMD%"=="diagnostic" goto DIAG
 if /I "%CMD%"=="status" goto DIAG
@@ -78,6 +80,16 @@ call :RUN_PY "verifier_resilience_v11_3.py" --startup --quiet
 set "RC=%ERRORLEVEL%"
 if %RC% GEQ 2 goto DIAGFAIL
 call :START_GUI
+exit /b %ERRORLEVEL%
+
+
+:AUTOSTART
+call :FIND_PYTHON
+if not defined PY_MODE exit /b 1
+call :RUN_PY "verifier_resilience_v11_3.py" --startup --quiet
+set "RC=%ERRORLEVEL%"
+if %RC% GEQ 2 exit /b %RC%
+call :START_GUI_BACKGROUND
 exit /b %ERRORLEVEL%
 
 :DIAG
@@ -111,6 +123,7 @@ if "%RC%"=="0" (
 )
 pause
 exit /b %RC%
+
 
 :VERIFY
 call :CLEAN_OBSOLETE
@@ -317,6 +330,25 @@ if not errorlevel 1 (
 )
 exit /b 0
 
+:START_GUI_BACKGROUND
+if /I "%PY_MODE%"=="portable" (
+    if exist "%~dp0runtime\python\pythonw.exe" (start "" "%~dp0runtime\python\pythonw.exe" "%~dp0app\gui.py" --background) else (start "" "%~dp0runtime\python\python.exe" "%~dp0app\gui.py" --background)
+    exit /b 0
+)
+if /I "%PY_MODE%"=="venv" (
+    if exist "%~dp0.venv\Scripts\pythonw.exe" (start "" "%~dp0.venv\Scripts\pythonw.exe" "%~dp0app\gui.py" --background) else (start "" "%~dp0.venv\Scripts\python.exe" "%~dp0app\gui.py" --background)
+    exit /b 0
+)
+if /I "%PY_MODE%"=="oldvenv" (
+    if exist "%~dp0venv\Scripts\pythonw.exe" (start "" "%~dp0venv\Scripts\pythonw.exe" "%~dp0app\gui.py" --background) else (start "" "%~dp0venv\Scripts\python.exe" "%~dp0app\gui.py" --background)
+    exit /b 0
+)
+if /I "%PY_MODE%"=="launcher" (start "" pyw -3 "%~dp0app\gui.py" --background & exit /b 0)
+where pythonw.exe >nul 2>&1
+if not errorlevel 1 (start "" pythonw.exe "%~dp0app\gui.py" --background) else (start "" python.exe "%~dp0app\gui.py" --background)
+exit /b 0
+
+
 :CLEAN_OBSOLETE
 if exist "agent_tail.txt" del /q "agent_tail.txt" >nul 2>&1
 if exist "tests\test_natural_language_v2.py.tmp" del /q "tests\test_natural_language_v2.py.tmp" >nul 2>&1
@@ -353,6 +385,8 @@ for %%F in (
     "MANIFEST_COMPLET_V11_8_3.sha256.txt"
     "README_AGENTLOCAL_V12_1_R2.txt"
     "MANIFEST_COMPLET_V12_1_R2.sha256.txt"
+    "README_AGENTLOCAL_V12_1_R4.txt"
+    "MANIFEST_COMPLET_V12_1_R4.sha256.txt"
 ) do (
     if exist "%~dp0%%~F" move /Y "%~dp0%%~F" "%LEGACY_DOCS%\%%~F" >nul 2>&1
 )

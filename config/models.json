@@ -5,7 +5,15 @@
     "llama_cli": "tools/llama.cpp/llama-cli.exe",
     "timeout_seconds": 45,
     "minimum_confidence": 0.72,
-    "probe_runtime_on_startup": true
+    "probe_runtime_on_startup": true,
+    "probe_fast_timeout_seconds": 10,
+    "probe_slow_timeout_seconds": 30,
+    "llama_server": "tools/llama.cpp/llama-server.exe",
+    "warm_server_enabled": true,
+    "warm_server_idle_seconds": 180,
+    "warm_server_min_available_ram_mb": 850,
+    "warm_server_start_timeout_seconds": 45,
+    "warm_server_local_only": true
   },
   "models": {
     "qwen_small": {

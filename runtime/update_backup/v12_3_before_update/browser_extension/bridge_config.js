@@ -1,0 +1,1 @@
+globalThis.AGENTLOCAL_BRIDGE_CONFIG = Object.freeze({"schemaVersion":1,"enabled":true,"host":"127.0.0.1","port":8765,"extensionId":"odhigmilcgpndpjgjkbfmpoiiblklcgf","token":"a56212e8f88ee4fa9583449eb09edcbe9923418be93e4311d969341afae37a1b","pollIntervalMs":500});
