@@ -4616,6 +4616,42 @@ def get_pending_action_suggestions():
     ]
 
 
+def _register_browser_tab_number_choices(actions, display_results):
+    """Permet « 5 » après une liste d'onglets, sans confondre avec les suggestions 1..3.
+
+    Seuls les hôtes déjà connus d'AgentLocal sont convertis en commandes sûres.
+    """
+    if not actions or len(actions) != 1 or not display_results:
+        return
+    action = actions[0] if isinstance(actions[0], dict) else {}
+    if str(action.get("action", "")).strip().lower() != "list_browser_tabs":
+        return
+    text = str(display_results[0] or "")
+    host_aliases = {
+        "chatgpt.com": "chatgpt",
+        "web.whatsapp.com": "whatsapp",
+        "whatsapp.com": "whatsapp",
+        "www.youtube.com": "youtube",
+        "youtube.com": "youtube",
+        "github.com": "github",
+        "teams.microsoft.com": "teams",
+        "outlook.office365.com": "outlook",
+        "outlook.live.com": "outlook-perso",
+        "web.descript.com": "descript",
+        "foad.udmci-enligne.ci": "udmci",
+    }
+    choices = {}
+    for line in text.splitlines():
+        match = re.match(r"^(\d+)\. .*? — ([^ ]+)(?: \[actif\])?$", line.strip())
+        if not match:
+            continue
+        alias = host_aliases.get(match.group(2).strip().lower())
+        if alias:
+            choices[match.group(1)] = f"passe sur {alias}"
+    if choices:
+        set_pending_choice("browser_tab_number", choices)
+
+
 def process_instruction(
     user_message
 ):
@@ -4723,6 +4759,7 @@ def process_instruction(
     )
 
     _remember_last_entity(actions, display_results)
+    _register_browser_tab_number_choices(actions, display_results)
 
     new_habits = learn_from_actions(
         activity_results
@@ -5507,6 +5544,7 @@ from controlled_local_tools import (
     read_clipboard_text as controlled_read_clipboard_text,
     read_last_reference as controlled_read_last_reference,
     read_system_info as controlled_read_system_info,
+    read_process_info as controlled_read_process_info,
     read_power_info as controlled_read_power_info,
     read_network_info as controlled_read_network_info,
     read_audio_state as controlled_read_audio_state,
@@ -5532,6 +5570,7 @@ from session_undo import clear_last_file_undo
 
 CONTROLLED_LOCAL_ACTIONS = {
     "read_system_info",
+    "read_process_info",
     "read_power_info",
     "read_network_info",
     "read_clipboard",
@@ -5581,6 +5620,7 @@ def _validate_controlled_local_contract(action_data):
 
     no_params_actions = {
         "read_system_info",
+        "read_process_info",
         "read_power_info",
         "read_network_info",
         "read_clipboard",
@@ -5600,8 +5640,12 @@ def _validate_controlled_local_contract(action_data):
         return False, "Paramètres supplémentaires interdits pour cette action."
 
     if action == "read_system_info":
-        if target not in {"memory", "disk", "cpu", "uptime", "summary"}:
+        if target not in {"memory", "disk", "cpu", "uptime", "summary", "performance", "agent", "windows"}:
             return False, "Information système non autorisée."
+
+    elif action == "read_process_info":
+        if target not in {"summary", "top", "top_cpu", "top_memory"}:
+            return False, "Information processus non autorisée."
 
     elif action == "read_power_info":
         if target not in {"battery", "power"}:
@@ -5878,6 +5922,10 @@ def execute_action(action_data, user_message=None):
         return controlled_read_system_info(
             target, explicit_user_command=True, source="manual"
         )
+    if action == "read_process_info":
+        return controlled_read_process_info(
+            target, explicit_user_command=True, source="manual"
+        )
     if action == "read_power_info":
         return controlled_read_power_info(
             target, explicit_user_command=True, source="manual"
@@ -5987,10 +6035,258 @@ def execute_action(action_data, user_message=None):
     return False, "Action locale contrôlée non implémentée."
 
 
+
+# ============================================================
+# V12 - SERVICES INTERNET OPTIONNELS EN LECTURE SEULE
+# ============================================================
+
+from connected_services import (
+    build_daily_briefing as connected_build_daily_briefing,
+    check_agentlocal_update as connected_check_agentlocal_update,
+    format_daily_briefing as connected_format_daily_briefing,
+    format_news as connected_format_news,
+    format_update_status as connected_format_update_status,
+    format_weather as connected_format_weather,
+    get_news as connected_get_news,
+    get_weather as connected_get_weather,
+)
+
+CONNECTED_ACTIONS = {
+    "read_weather",
+    "read_news",
+    "read_daily_briefing",
+    "check_online_updates",
+}
+SUPPORTED_ACTIONS.update(CONNECTED_ACTIONS)
+
+_validate_action_before_connected_v12 = validate_action
+_execute_action_before_connected_v12 = execute_action
+
+
+def _validate_connected_contract(action_data):
+    if not isinstance(action_data, dict):
+        return False, "Format d'action connectee invalide."
+    if action_data.get("schema_version") != SCHEMA_VERSION:
+        return False, "Version du contrat non supportee."
+    action = str(action_data.get("action", "")).strip().lower()
+    target = str(action_data.get("target", "")).strip().lower()
+    params = action_data.get("params")
+    if action not in CONNECTED_ACTIONS:
+        return False, "Action connectee inconnue."
+    if params not in (None, {}):
+        return False, "Parametres Internet supplementaires interdits."
+    if action in {"read_weather", "read_news", "read_daily_briefing"} and target != "today":
+        return False, "Cible connectee non autorisee."
+    if action == "check_online_updates" and target != "agentlocal":
+        return False, "Seule la verification AgentLocal est autorisee."
+    return True, None
+
+
+def validate_action(action_data):
+    action = ""
+    if isinstance(action_data, dict):
+        action = str(action_data.get("action", "")).strip().lower()
+    if action in CONNECTED_ACTIONS:
+        return _validate_connected_contract(action_data)
+    return _validate_action_before_connected_v12(action_data)
+
+
+def _verify_explicit_connected_action(user_message, action_data):
+    if not isinstance(user_message, str) or not user_message.strip():
+        return False, "Une commande utilisateur explicite est requise."
+    try:
+        proof = deterministic_proof_interpret(user_message)
+    except Exception:
+        return False, "Impossible de verifier localement la commande Internet."
+    wanted = _canonical_contract_value(action_data)
+    for candidate in proof.get("actions", []) if isinstance(proof, dict) else []:
+        if _canonical_contract_value(candidate) == wanted:
+            return True, None
+    return False, "Commande connectee refusee : la demande ne correspond pas exactement a une action Internet autorisee."
+
+
+def execute_action(action_data, user_message=None):
+    action = ""
+    if isinstance(action_data, dict):
+        action = str(action_data.get("action", "")).strip().lower()
+    if action not in CONNECTED_ACTIONS:
+        return _execute_action_before_connected_v12(action_data, user_message=user_message)
+
+    valid, error = validate_action(action_data)
+    if not valid:
+        return False, error
+    explicit, proof_error = _verify_explicit_connected_action(user_message, action_data)
+    if not explicit:
+        return False, proof_error
+
+    if action == "read_weather":
+        ok, data = connected_get_weather()
+        return (True, connected_format_weather(data)) if ok else (False, str(data))
+    if action == "read_news":
+        ok, data = connected_get_news()
+        return (True, connected_format_news(data)) if ok else (False, str(data))
+    if action == "read_daily_briefing":
+        data = connected_build_daily_briefing()
+        # Le briefing peut etre partiel : une panne Internet ne casse jamais l'agent local.
+        return True, connected_format_daily_briefing(data)
+    if action == "check_online_updates":
+        ok, data = connected_check_agentlocal_update()
+        return (True, connected_format_update_status(data)) if ok else (False, str(data))
+
+    return False, "Action connectee non implementee."
+
+# ============================================================
+# V12.1 - PLANIFICATION LOCALE CONTROLEE
+# ============================================================
+
+from scheduler import (
+    confirm_schedule as scheduler_confirm_schedule,
+    create_draft as scheduler_create_draft,
+    delete_schedule as scheduler_delete_schedule,
+    format_schedule as scheduler_format_schedule,
+    format_schedule_list as scheduler_format_schedule_list,
+    resolve_schedule_ref as scheduler_resolve_schedule_ref,
+    set_enabled as scheduler_set_enabled,
+)
+
+SCHEDULE_ACTIONS = {
+    "create_schedule_draft",
+    "list_schedules",
+    "confirm_schedule",
+    "enable_schedule",
+    "disable_schedule",
+    "delete_schedule",
+}
+SUPPORTED_ACTIONS.update(SCHEDULE_ACTIONS)
+
+_validate_action_before_scheduler_v121 = validate_action
+_execute_action_before_scheduler_v121 = execute_action
+
+
+def _validate_schedule_contract(action_data):
+    if not isinstance(action_data, dict):
+        return False, "Format de planification invalide."
+    if action_data.get("schema_version") != SCHEMA_VERSION:
+        return False, "Version du contrat non supportée."
+    action = str(action_data.get("action", "")).strip().lower()
+    target = str(action_data.get("target", "")).strip().lower()
+    params = action_data.get("params")
+    if action not in SCHEDULE_ACTIONS:
+        return False, "Action de planification inconnue."
+
+    if action == "list_schedules":
+        if target != "all" or params not in (None, {}):
+            return False, "Contrat de liste des planifications invalide."
+        return True, None
+
+    if action == "create_schedule_draft":
+        if target not in {"routine", "briefing", "habit_summary"} or not isinstance(params, dict):
+            return False, "Type de planification interdit."
+        if set(params) != {"kind", "scheduled_target", "trigger"}:
+            return False, "Paramètres de planification invalides."
+        if str(params.get("kind", "")).strip().lower() != target:
+            return False, "Type de planification incohérent."
+        trigger = params.get("trigger")
+        if not isinstance(trigger, dict) or set(trigger) != {"type", "time", "days"}:
+            return False, "Déclencheur de planification invalide."
+        if trigger.get("type") != "weekly":
+            return False, "Seul le déclencheur hebdomadaire local est autorisé."
+        if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", str(trigger.get("time", ""))):
+            return False, "Heure de planification invalide."
+        days = trigger.get("days")
+        if not isinstance(days, list) or not days or any(not isinstance(day, int) or day < 0 or day > 6 for day in days):
+            return False, "Jours de planification invalides."
+        scheduled_target = str(params.get("scheduled_target", "")).strip().lower()
+        if target == "routine" and not re.fullmatch(r"[a-z0-9_-]+", scheduled_target):
+            return False, "Routine planifiée invalide."
+        if target in {"briefing", "habit_summary"} and scheduled_target != "today":
+            return False, "Cible de planification invalide."
+        return True, None
+
+    if params not in (None, {}):
+        return False, "Paramètres supplémentaires interdits."
+    if not (target.isdigit() or re.fullmatch(r"p-[0-9a-f]{8}", target)):
+        return False, "Référence de planification invalide."
+    return True, None
+
+
+def validate_action(action_data):
+    action = ""
+    if isinstance(action_data, dict):
+        action = str(action_data.get("action", "")).strip().lower()
+    if action in SCHEDULE_ACTIONS:
+        return _validate_schedule_contract(action_data)
+    return _validate_action_before_scheduler_v121(action_data)
+
+
+def _verify_explicit_schedule_action(user_message, action_data):
+    if not isinstance(user_message, str) or not user_message.strip():
+        return False, "Une commande utilisateur explicite est requise."
+    try:
+        proof = deterministic_proof_interpret(user_message)
+    except Exception:
+        return False, "Impossible de vérifier localement la planification."
+    wanted = _canonical_contract_value(action_data)
+    for candidate in proof.get("actions", []) if isinstance(proof, dict) else []:
+        if _canonical_contract_value(candidate) == wanted:
+            return True, None
+    return False, "Planification refusée : la demande ne correspond pas exactement à l'action autorisée."
+
+
+def execute_action(action_data, user_message=None):
+    action = ""
+    if isinstance(action_data, dict):
+        action = str(action_data.get("action", "")).strip().lower()
+    if action not in SCHEDULE_ACTIONS:
+        return _execute_action_before_scheduler_v121(action_data, user_message=user_message)
+
+    valid, error = validate_action(action_data)
+    if not valid:
+        return False, error
+    explicit, proof_error = _verify_explicit_schedule_action(user_message, action_data)
+    if not explicit:
+        return False, proof_error
+
+    target = str(action_data.get("target", "")).strip().lower()
+    params = action_data.get("params") or {}
+
+    if action == "list_schedules":
+        return True, scheduler_format_schedule_list()
+
+    if action == "create_schedule_draft":
+        try:
+            item = scheduler_create_draft(
+                params["kind"],
+                params["scheduled_target"],
+                params["trigger"],
+            )
+        except Exception as exc:
+            return False, f"Impossible de préparer cette planification : {exc}"
+        detail = scheduler_format_schedule(item)
+        return True, (
+            "Brouillon de planification créé, mais encore désactivé.\n"
+            f"{detail}\n\n"
+            f"Pour l'activer, dis : « confirme la planification {item['id']} »."
+        )
+
+    schedule_id = scheduler_resolve_schedule_ref(target)
+    if not schedule_id:
+        return False, "Planification introuvable. Utilise « liste mes planifications » pour voir les identifiants."
+    if action == "confirm_schedule":
+        return scheduler_confirm_schedule(schedule_id)
+    if action == "enable_schedule":
+        return scheduler_set_enabled(schedule_id, True)
+    if action == "disable_schedule":
+        return scheduler_set_enabled(schedule_id, False)
+    if action == "delete_schedule":
+        return scheduler_delete_schedule(schedule_id)
+
+    return False, "Action de planification non implémentée."
+
+
 # ============================================================
 # DEMARRAGE
 # ============================================================
 
 if __name__ == "__main__":
-
     main()

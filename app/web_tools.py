@@ -2447,11 +2447,7 @@ def open_website(
     # plus tard de fermer une fenêtre au hasard.
     return (
         True,
-        (
-            f"Site ouvert : {url}. "
-            "La fenêtre n'a pas pu être enregistrée pour une "
-            "fermeture ciblée."
-        )
+        f"Site ouvert : {url}."
     )
 
 

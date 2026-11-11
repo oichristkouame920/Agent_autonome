@@ -85,7 +85,7 @@ def _install_requirements(destination: Path, allow_online: bool):
     elif not allow_online:
         raise RuntimeError(
             "Aucun wheel hors ligne n'est present dans vendor/wheels. "
-            "Lance d'abord preparer_dependances_offline.bat, ou relance avec --allow-online."
+            "Lance d'abord AgentLocal.bat offline, ou relance avec --allow-online."
         )
 
     subprocess.run(command, cwd=PROJECT_ROOT, check=True, shell=False)

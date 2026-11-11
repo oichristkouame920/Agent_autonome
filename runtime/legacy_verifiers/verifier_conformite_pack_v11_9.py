@@ -39,7 +39,7 @@ critical_files = [
     "browser_extension/background.js",
     "browser_extension/bridge_config.js",
     "browser_native_host/com.agentlocal.bridge.json",
-    "tester_agentlocal.bat",
+    "AgentLocal.bat",
     "tester_agentlocal.ps1",
     "project_version.py",
 ]
@@ -47,9 +47,9 @@ for relative in critical_files:
     check((ROOT / relative).is_file(), f"Fichier critique manquant : {relative}")
 
 # 2) Source de vérité de version.
-check(AGENTLOCAL_VERSION == "11.8", "Version centrale inattendue")
+check(AGENTLOCAL_VERSION == "11.9", "Version centrale inattendue")
 check(SCHEMA_COMPAT_VERSION == 1, "Schéma de compatibilité inattendu")
-check(FIELD_LANGUAGE_PATCH_VERSION == AGENTLOCAL_BUILD, "Backend déterministe non aligné sur le build V11.8")
+check(FIELD_LANGUAGE_PATCH_VERSION == AGENTLOCAL_BUILD, "Backend déterministe non aligné sur le build V11.9")
 
 # 3) Tous les JSON de configuration doivent être valides.
 for path in sorted((ROOT / "config").glob("*.json")):
@@ -126,16 +126,21 @@ check("def get_pending_action_suggestions" in agent_source, "API suggestions abs
 check("def execute_suggestion" in gui_source, "Boutons de suggestions absents du GUI")
 check("get_pending_action_suggestions" in gui_source, "GUI non connecté aux suggestions du coeur")
 
-# 8) Le lanceur global doit compiler, valider, lancer les verifiers puis pytest/tests.
+# 8) Le lanceur global doit compiler, valider, lancer les verifiers puis unittest.
 runner = (ROOT / "tester_agentlocal.ps1").read_text(encoding="utf-8-sig")
-for token in ("compileall", "json.tool", "verifier_*.py", "pytest -q tests"):
+for token in ("compileall", "json.tool", "verifier_*.py", "-m unittest discover"):
     check(token in runner, f"Lanceur global incomplet : {token}")
+check("-m pytest" not in runner, "Pytest ne doit plus être une dépendance obligatoire")
 check("verifier_runtime_v11_2.py" in runner and "--startup" in runner, "Le test global ne tolère pas correctement le mode dégradé")
 check("verifier_resilience_v11_3.py" in runner, "Le test global n'intègre pas le vérificateur de résilience")
 
-# 9) Pas de fichiers temporaires sources connus dans le pack.
+# 9) Un seul lanceur utilisateur .bat doit rester à la racine.
+root_bats = sorted(p.name for p in ROOT.glob("*.bat"))
+check(root_bats == ["AgentLocal.bat"], f"Lanceurs racine inattendus : {root_bats}")
+
+# 10) Pas de fichiers temporaires sources connus dans le pack.
 for pattern in ("*.tmp", "*.temp"):
     bad = [p for p in ROOT.rglob(pattern) if ".venv" not in p.parts and "runtime" not in p.parts]
     check(not bad, f"Fichiers temporaires détectés : {[str(p.relative_to(ROOT)) for p in bad[:10]]}")
 
-print("Conformité pack AgentLocal V11.8 : OK")
+print("Conformité pack AgentLocal V11.9 : OK")

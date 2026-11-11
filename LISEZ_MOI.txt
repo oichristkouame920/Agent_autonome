@@ -1,0 +1,11 @@
+AGENTLOCAL - PATCH BRIEFING PRIORITAIRE
+
+1. Fermer AgentLocal.
+2. Sauvegarder les fichiers actuels :
+   C:\Users\cdn09\AgentLocal\app\connected_services.py
+   C:\Users\cdn09\AgentLocal\config\connected_services.json
+3. Copier les deux fichiers de ce patch aux memes emplacements.
+4. Lancer AgentLocal.bat puis option 4.
+5. Tester : briefing du jour
+
+Le fichier config\permissions.json ne doit pas etre modifie : news.google.com est deja autorise dans la R4.

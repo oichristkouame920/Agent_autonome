@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "enabled": true,
+  "host": "127.0.0.1",
+  "port": 8765,
+  "extension_id": "odhigmilcgpndpjgjkbfmpoiiblklcgf",
+  "token": "a56212e8f88ee4fa9583449eb09edcbe9923418be93e4311d969341afae37a1b",
+  "poll_interval_ms": 500,
+  "request_timeout_seconds": 12,
+  "maximum_body_bytes": 262144
+}

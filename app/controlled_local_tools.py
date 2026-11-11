@@ -192,6 +192,164 @@ def _system_drive_root():
     return str(Path.home().anchor or "/")
 
 
+def _process_count():
+    if psutil is None:
+        return None
+    try:
+        return len(psutil.pids())
+    except Exception:
+        return None
+
+
+def _safe_process_name(proc):
+    try:
+        name = str(proc.name() or "").strip()
+    except Exception:
+        name = ""
+    return name or f"PID {getattr(proc, 'pid', '?')}"
+
+
+def _process_rows(query: str, limit: int):
+    """Snapshot lecture seule des processus. Aucun arrêt ni modification."""
+    if psutil is None:
+        return None
+    query = str(query or "top").strip().lower()
+    limit = max(1, min(10, int(limit or 8)))
+    rows = []
+    processes = []
+    try:
+        for proc in psutil.process_iter():
+            try:
+                proc.cpu_percent(None)
+                processes.append(proc)
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+        if query in {"top", "top_cpu"}:
+            # Courte fenêtre de mesure, comparable à un instantané de panneau performance.
+            time.sleep(0.12)
+        total_mem = max(1, int(psutil.virtual_memory().total))
+        for proc in processes:
+            try:
+                raw_cpu = float(proc.cpu_percent(None)) if query in {"top", "top_cpu"} else 0.0
+                name = _safe_process_name(proc)
+                # psutil peut retourner >100% pour un processus multithreadé.
+                # Le panneau utilisateur affiche une part globale comparable au
+                # Gestionnaire des tâches : 0..100% de la machine entière.
+                logical_cpus = max(1, int(psutil.cpu_count(logical=True) or 1))
+                cpu = max(0.0, min(100.0, raw_cpu / logical_cpus))
+                if name.strip().lower() in {"system idle process", "idle"}:
+                    continue
+                rss = int(proc.memory_info().rss)
+                mem_pct = (rss / total_mem) * 100.0
+                rows.append({
+                    "pid": int(proc.pid),
+                    "name": name,
+                    "cpu": cpu,
+                    "rss": max(0, rss),
+                    "mem_pct": max(0.0, mem_pct),
+                })
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess, OSError):
+                continue
+    except Exception:
+        return None
+
+    if query == "top_memory":
+        key = lambda row: (row["rss"], row["cpu"])
+    elif query == "top_cpu":
+        key = lambda row: (row["cpu"], row["rss"])
+    else:
+        # Score lisible : priorité CPU, puis empreinte mémoire relative.
+        key = lambda row: (row["cpu"] + row["mem_pct"], row["rss"])
+    rows.sort(key=key, reverse=True)
+    return rows[:limit]
+
+
+def read_process_info(query: str, explicit_user_command=False, source="manual"):
+    ok, policy, error = _manual_only_check(
+        "process_information_policy", explicit_user_command, source
+    )
+    if not ok:
+        return False, error
+    if not policy.get("read_only", False) or policy.get("allow_process_termination", False):
+        return False, "La politique processus doit rester strictement en lecture seule."
+
+    query = str(query or "").strip().lower()
+    allowed = set(policy.get("allowed_queries", []))
+    if query not in allowed:
+        return False, "Information processus non autorisée."
+    if psutil is None:
+        return False, "La lecture des processus n'est pas disponible dans cet environnement."
+
+    if query == "summary":
+        try:
+            count = len(psutil.pids())
+        except Exception:
+            return False, "Impossible de lire la liste des processus."
+        return True, f"Processus : {count} processus en cours d'exécution."
+
+    limit = int(policy.get("maximum_listed_processes", 10) or 10)
+    rows = _process_rows(query, min(limit, 8))
+    if rows is None:
+        return False, "Impossible de lire les processus de façon sûre."
+    if not rows:
+        return True, "Aucun processus exploitable n'a été trouvé."
+
+    title = {
+        "top": "Processus les plus gourmands (instantané)",
+        "top_cpu": "Processus consommant le plus de CPU (instantané)",
+        "top_memory": "Processus consommant le plus de RAM",
+    }.get(query, "Processus")
+    lines = [f"{title} :"]
+    for index, row in enumerate(rows, start=1):
+        lines.append(
+            f"{index}. {row['name']} (PID {row['pid']}) — "
+            f"CPU {row['cpu']:.1f}% ; RAM {_format_bytes(row['rss'])}"
+        )
+    lines.append("Lecture seule : aucun processus n'a été arrêté ou modifié.")
+    return True, "\n".join(lines)
+
+
+def _visible_windows_snapshot(limit=12):
+    """Liste bornée des fenêtres de premier plan visibles, lecture seule."""
+    if os.name != "nt":
+        return []
+    rows = []
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    @EnumWindowsProc
+    def callback(hwnd, lparam):
+        try:
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                return True
+            buffer = ctypes.create_unicode_buffer(min(length + 1, 512))
+            user32.GetWindowTextW(hwnd, buffer, len(buffer))
+            title = " ".join(buffer.value.replace("\r", " ").replace("\n", " ").split())[:180]
+            if not title:
+                return True
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            process_name = "processus inconnu"
+            if psutil is not None and pid.value:
+                try:
+                    process_name = psutil.Process(int(pid.value)).name() or process_name
+                except Exception:
+                    pass
+            rows.append({"title": title, "pid": int(pid.value or 0), "process": process_name})
+            return len(rows) < max(1, min(int(limit), 20))
+        except Exception:
+            return True
+
+    try:
+        user32.EnumWindows(callback, 0)
+    except Exception:
+        return rows
+    return rows
+
+
 def read_system_info(query: str, explicit_user_command=False, source="manual"):
     ok, policy, error = _manual_only_check(
         "system_information_policy", explicit_user_command, source
@@ -205,6 +363,44 @@ def read_system_info(query: str, explicit_user_command=False, source="manual"):
     allowed = set(policy.get("allowed_queries", []))
     if query not in allowed:
         return False, "Information système non autorisée."
+
+    if query == "agent":
+        pieces = []
+        try:
+            from project_version import AGENTLOCAL_VERSION
+            pieces.append(f"Version {AGENTLOCAL_VERSION}")
+        except Exception:
+            pass
+        if psutil is not None:
+            try:
+                proc = psutil.Process(os.getpid())
+                rss = int(proc.memory_info().rss)
+                logical_cpus = max(1, int(psutil.cpu_count(logical=True) or 1))
+                cpu = max(0.0, min(100.0, float(proc.cpu_percent(interval=0.05)) / logical_cpus))
+                pieces.append(f"processus AgentLocal : CPU {cpu:.1f}% ; RAM {_format_bytes(rss)}")
+            except Exception:
+                pass
+        try:
+            from backends.backend_manager import get_backend_status
+            status = get_backend_status()
+            selected = status.get("selected") or "indisponible"
+            llama = "disponible" if status.get("llama_available") else "indisponible"
+            pieces.append(f"backend actif : {selected} ; LLM local : {llama}")
+        except Exception:
+            pass
+        if not pieces:
+            return False, "Impossible de lire les performances d'AgentLocal."
+        return True, "Performance AgentLocal : " + " ; ".join(pieces) + "."
+
+    if query == "windows":
+        rows = _visible_windows_snapshot(limit=12)
+        if not rows:
+            return True, "Aucune fenêtre utilisateur visible n'a été détectée."
+        lines = [f"Fenêtres visibles sur ce PC ({len(rows)}) :"]
+        for index, row in enumerate(rows, start=1):
+            lines.append(f"{index}. {row['title']} — {row['process']} (PID {row['pid']})")
+        lines.append("Lecture seule : aucune fenêtre n'a été modifiée.")
+        return True, "\n".join(lines)
 
     if query == "memory":
         info = _memory_info()
@@ -241,6 +437,38 @@ def read_system_info(query: str, explicit_user_command=False, source="manual"):
         if seconds is None:
             return False, "Impossible de lire le temps de fonctionnement du PC."
         return True, f"Le PC est allumé depuis environ {_format_duration(seconds)}."
+
+    if query == "performance":
+        mem = _memory_info()
+        cpu = _cpu_percent()
+        root = _system_drive_root()
+        try:
+            total, used, free = shutil.disk_usage(root)
+            disk_percent = (used / total * 100.0) if total else 0.0
+        except OSError:
+            total = used = free = None
+            disk_percent = None
+        uptime = _uptime_seconds()
+        process_count = _process_count()
+
+        lines = ["Tableau de performances du PC :"]
+        if cpu is not None:
+            lines.append(f"- CPU : {cpu:.0f}%")
+        if mem:
+            lines.append(
+                f"- RAM : {mem['percent']:.0f}% — {_format_bytes(mem['used'])} / {_format_bytes(mem['total'])}"
+            )
+        if free is not None:
+            lines.append(
+                f"- Disque système {root} : {disk_percent:.0f}% utilisés — {_format_bytes(free)} libres"
+            )
+        if process_count is not None:
+            lines.append(f"- Processus : {process_count} en cours")
+        if uptime is not None:
+            lines.append(f"- Uptime : {_format_duration(uptime)}")
+        if len(lines) == 1:
+            return False, "Aucune donnée de performance n'a pu être lue."
+        return True, "\n".join(lines)
 
     if query == "summary":
         pieces = []
@@ -1992,6 +2220,7 @@ def undo_last_file_action(explicit_user_command=False, source="manual"):
 
 _ACTION_POLICY_MAP = {
     "read_system_info": "system_information_policy",
+    "read_process_info": "process_information_policy",
     "read_power_info": "power_information_policy",
     "read_network_info": "network_information_policy",
     "read_clipboard": "clipboard_policy",

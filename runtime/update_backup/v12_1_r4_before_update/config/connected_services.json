@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "weather": {
+    "enabled": true,
+    "city": "Abidjan",
+    "country_code": "CI",
+    "cache_seconds": 900
+  },
+  "news": {
+    "enabled": true,
+    "query": "Cote d'Ivoire when:1d",
+    "limit": 5,
+    "cache_seconds": 900
+  },
+  "updates": {
+    "enabled": true,
+    "github_repository": "oichristkouame920/Agent_autonome",
+    "branch": "Modification",
+    "cache_seconds": 900
+  },
+  "morning_briefing": {
+    "enabled": true,
+    "start_hour": 5,
+    "end_hour": 11,
+    "show_once_per_day": true
+  }
+}

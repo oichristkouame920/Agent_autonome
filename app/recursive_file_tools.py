@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+import time
 import unicodedata
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -26,6 +27,37 @@ HARD_MAX_RECURSIVE_DEPTH = 16
 HARD_MAX_SEARCH_ENTRIES = 20000
 HARD_MAX_SEARCH_RESULTS = 50
 HARD_MAX_RELATIVE_PATH_LENGTH = 1024
+
+# V11.8.1 : cache éphémère des recherches de métadonnées identiques.
+# Il ne contient aucun contenu de fichier et expire rapidement. Son but est
+# d'éviter de rescanner plusieurs milliers d'entrées lorsque l'utilisateur
+# répète exactement une recherche ou reclique sur la même suggestion.
+_ADVANCED_SEARCH_RESULT_CACHE = {}
+_ADVANCED_SEARCH_CACHE_TTL_SECONDS = 20.0
+_ADVANCED_SEARCH_CACHE_MAX_ENTRIES = 32
+
+
+def clear_advanced_search_result_cache():
+    _ADVANCED_SEARCH_RESULT_CACHE.clear()
+
+
+def _advanced_search_cache_get(key):
+    item = _ADVANCED_SEARCH_RESULT_CACHE.get(key)
+    if not item:
+        return None
+    created, value = item
+    if time.monotonic() - created > _ADVANCED_SEARCH_CACHE_TTL_SECONDS:
+        _ADVANCED_SEARCH_RESULT_CACHE.pop(key, None)
+        return None
+    return value
+
+
+def _advanced_search_cache_set(key, value):
+    if len(_ADVANCED_SEARCH_RESULT_CACHE) >= _ADVANCED_SEARCH_CACHE_MAX_ENTRIES:
+        oldest = min(_ADVANCED_SEARCH_RESULT_CACHE, key=lambda k: _ADVANCED_SEARCH_RESULT_CACHE[k][0])
+        _ADVANCED_SEARCH_RESULT_CACHE.pop(oldest, None)
+    _ADVANCED_SEARCH_RESULT_CACHE[key] = (time.monotonic(), value)
+    return value
 
 
 def get_recursive_access_policy():
@@ -1138,6 +1170,14 @@ def advanced_search_files(
     )
     limit = max(1, min(limit, configured_results))
 
+    cache_key = (
+        tuple(roots), file_kind, date_filter, date_field, size_operator,
+        size_bytes, sort, limit, bool(count_only),
+    )
+    cached = _advanced_search_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     now = datetime.now()
     scanned = 0
     limit_reached = False
@@ -1232,15 +1272,21 @@ def advanced_search_files(
 
     if count_only:
         if limit_reached:
-            return True, (
+            return _advanced_search_cache_set(cache_key, (True, (
                 f"J'ai trouvé {matched_count} {kind_label} correspondant(s) dans {root_label} "
                 "avant d'atteindre la limite de sécurité. Le total réel peut être supérieur."
-            )
-        return True, f"J'ai trouvé {matched_count} {kind_label} correspondant(s) dans {root_label}."
+            )))
+        return _advanced_search_cache_set(
+            cache_key,
+            (True, f"J'ai trouvé {matched_count} {kind_label} correspondant(s) dans {root_label}."),
+        )
 
     if not candidates:
         suffix = " La limite de sécurité a été atteinte pendant la recherche." if limit_reached else ""
-        return True, f"Aucun {kind_label} correspondant n'a été trouvé dans {root_label}.{suffix}"
+        return _advanced_search_cache_set(
+            cache_key,
+            (True, f"Aucun {kind_label} correspondant n'a été trouvé dans {root_label}.{suffix}"),
+        )
 
     if sort == "modified_desc":
         candidates.sort(key=lambda item: item["modified"], reverse=True)
@@ -1272,7 +1318,7 @@ def advanced_search_files(
     if limit_reached:
         lines.append("- Recherche arrêtée à la limite de sécurité configurée ; d'autres résultats peuvent exister.")
 
-    return True, "\n".join(lines)
+    return _advanced_search_cache_set(cache_key, (True, "\n".join(lines)))
 
 
 def get_unique_reference_for_context(name, root_name=None, item_type="any"):

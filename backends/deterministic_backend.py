@@ -6160,6 +6160,9 @@ def parse_controlled_local_command(user_message):
         r"(?:je suis|le pc est|mon pc est) connecte(?: au reseau)?",
         r"(?:verifie|regarde|dis moi) (?:si )?(?:mon )?reseau (?:est )?(?:actif|connecte|ok)",
         r"(?:etat|statut) (?:du )?reseau",
+        r"(?:quel|quelle) (?:est )?(?:l[\' ]etat|etat) (?:de )?(?:ma |mon |la )?(?:connexion|connexion reseau)",
+        r"(?:comment va|comment est) (?:ma |mon )?(?:connexion|reseau)",
+        r"(?:etat|statut) (?:de )?(?:ma |mon |la )?(?:connexion|connexion reseau)",
     )
     if any(re.fullmatch(pattern, plain) for pattern in network_status_patterns):
         return [make_action("read_network_info", "status")]
@@ -6205,6 +6208,63 @@ def parse_controlled_local_command(user_message):
     )
     if any(re.fullmatch(pattern, plain) for pattern in internet_speed_patterns):
         return [make_action("read_network_info", "internet_speed")]
+
+    # --------------------------------------------------------
+    # Centre de performances / processus - lecture seule
+    # --------------------------------------------------------
+    process_patterns = (
+        ("top_cpu", (
+            r"(?:montre|affiche|liste|donne moi|quels sont) (?:les )?processus (?:qui )?(?:consomment|utilisent|prennent) (?:le )?plus (?:de )?(?:cpu|processeur)",
+            r"(?:top|liste) (?:des )?processus (?:cpu|processeur)",
+            r"(?:qui|quel processus) (?:prend|utilise|consomme) (?:le )?plus (?:de )?(?:cpu|processeur)",
+        )),
+        ("top_memory", (
+            r"(?:montre|affiche|liste|donne moi|quels sont) (?:les )?processus (?:qui )?(?:consomment|utilisent|prennent) (?:le )?plus (?:de )?(?:ram|memoire)",
+            r"(?:top|liste) (?:des )?processus (?:ram|memoire)",
+            r"(?:qui|quel processus) (?:prend|utilise|consomme) (?:le )?plus (?:de )?(?:ram|memoire)",
+        )),
+        ("top", (
+            r"(?:montre|affiche|liste|donne moi) (?:les )?processus (?:les )?plus gourmands",
+            r"(?:quels sont|c est quoi) (?:les )?processus (?:les )?plus gourmands",
+            r"(?:montre|affiche|liste) (?:les )?processus (?:les )?plus lourds",
+            r"(?:processus|taches) (?:les )?plus gourmands",
+        )),
+        ("summary", (
+            r"(?:combien|nombre) (?:de )?processus (?:sont )?(?:ouverts|lances|en cours)",
+            r"(?:liste|etat|resume) (?:des )?processus",
+        )),
+    )
+    for query, patterns in process_patterns:
+        if any(re.fullmatch(pattern, plain) for pattern in patterns):
+            return [make_action("read_process_info", query)]
+
+    agent_performance_patterns = (
+        r"(?:quelle|quel) (?:est )?(?:ta|ton) performance",
+        r"(?:quelles|quels) (?:sont )?(?:tes )?performances",
+        r"(?:montre|affiche|donne moi) (?:les )?performances? (?:d |de )?agentlocal",
+        r"(?:agentlocal )?(?:est|tu es) (?:rapide|lent) comment",
+        r"(?:etat|statut) (?:de )?agentlocal",
+    )
+    if any(re.fullmatch(pattern, plain) for pattern in agent_performance_patterns):
+        return [make_action("read_system_info", "agent")]
+
+    visible_window_patterns = (
+        r"(?:quelle|quelles|quel|quels) (?:sont )?(?:les )?fenetres? (?:actives|active|ouvertes|ouverte|visibles|visible) (?:sur (?:ce|mon) pc)?",
+        r"(?:liste|montre|affiche|donne moi) (?:les )?fenetres? (?:actives|ouvertes|visibles)",
+        r"(?:fenetres? actives|fenetres? ouvertes|fenetres? visibles)",
+        r"(?:qu est ce qui|qu est-ce qui) est ouvert (?:sur )?(?:mon|ce) pc",
+    )
+    if any(re.fullmatch(pattern, plain) for pattern in visible_window_patterns):
+        return [make_action("read_system_info", "windows")]
+
+    performance_patterns = (
+        r"(?:affiche|montre|ouvre|donne moi) (?:le )?(?:tableau|panneau) (?:de )?performances?(?: du pc)?",
+        r"(?:montre|affiche|donne moi)?\s*(?:les )?(?:performances?|performance) (?:de )?(?:mon |du )?pc",
+        r"(?:tableau|panneau) performance(?:s)?",
+        r"(?:mode|vue) performance(?:s)?",
+    )
+    if any(re.fullmatch(pattern, plain) for pattern in performance_patterns):
+        return [make_action("read_system_info", "performance")]
 
     # --------------------------------------------------------
     # Informations système en lecture seule
@@ -6261,6 +6321,8 @@ def parse_controlled_local_command(user_message):
             r"(?:ca dit quoi|c est comment) (?:le |mon )?pc",
             r"(?:fais moi|donne moi|donne|montre moi|montre|affiche|regarde) (?:un peu )?(?:l'etat|l etat) (?:de )?(?:mon |du )?pc",
             r"(?:quelles?|donne|montre|affiche) (?:sont )?(?:les )?(?:caracteristiques?|infos|informations) (?:de )?(?:ma |mon |du )?(?:machine|pc|ordinateur)",
+            r"(?:quel|quelle) (?:est )?(?:l'etat|l etat) (?:de )?(?:mon |du )?(?:pc|ordinateur|systeme)",
+            r"(?:quel|quelle) (?:est )?(?:l'etat|l etat) (?:de )?(?:ma )?machine",
         )),
     )
     for query, patterns in system_patterns:
@@ -6698,6 +6760,25 @@ def _is_clipboard_execution_request(text):
     ))
 
 
+def _unsupported_power_action_reply(text):
+    """Répond localement aux actions d'alimentation non encore exposées.
+
+    Cela évite de démarrer le LLM pour une intention système connue mais
+    volontairement absente de la liste blanche actuelle.
+    """
+    value = normalize_text(text).replace("-", " ").strip(" .!?")
+    value = re.sub(r"\s+", " ", value)
+    if re.fullmatch(
+        r"(?:mets?|met|mettre|passe|passer) (?:mon |le )?(?:pc|ordinateur|systeme) en veille",
+        value,
+    ):
+        return (
+            "La mise en veille n'est pas encore activée dans les actions autorisées d'AgentLocal. "
+            "Je ne fais rien pour éviter d'interrompre ton travail."
+        )
+    return None
+
+
 def _mass_action_conversation_reply(text):
     """Intercepte les opérations de masse avant tout parseur destructif."""
     value = normalize_text(text).replace("-", " ").strip(" .!?")
@@ -6720,12 +6801,82 @@ def _mass_action_conversation_reply(text):
     return None
 
 
+def _connected_service_actions(text):
+    """V12 : intentions Internet en lecture seule, avant tout parseur fichier/LLM."""
+    value = normalize_text(text).replace("-", " ").strip(" .!?")
+    value = re.sub(r"\s+", " ", value)
+
+    if re.fullmatch(
+        r"(?:quelle|quel) (?:est )?(?:la )?meteo(?: d[' ]aujourd[' ]hui| aujourd hui| du jour)?(?: a [a-z0-9 ']+)?",
+        value,
+    ) or re.fullmatch(r"(?:meteo|la meteo)(?: aujourd hui| du jour)?", value):
+        return [make_action("read_weather", "today")]
+
+    if re.fullmatch(
+        r"(?:donne|donner|montre|montrer|affiche|afficher|lis|lire|quelles? sont) (?:moi )?(?:les )?(?:actualites|actus)(?: du jour| d[' ]aujourd[' ]hui| aujourd hui)?",
+        value,
+    ) or value in {"actualites", "actus", "actualites du jour", "les actualites"}:
+        return [make_action("read_news", "today")]
+
+    if re.fullmatch(
+        r"(?:briefing|briefing du jour|briefing du matin|mon briefing|donne moi mon briefing|affiche mon briefing)",
+        value,
+    ):
+        return [make_action("read_daily_briefing", "today")]
+
+    if re.fullmatch(
+        r"(?:verifi|verifie|verifier|cherche|chercher|regarde|voir) (?:mes |les )?mises? a jours?",
+        value,
+    ) or value in {"mes mises a jour", "mises a jour", "mes mises a jours", "mises a jours"}:
+        return [make_action("check_online_updates", "agentlocal")]
+
+    return []
+
+
+def _terrain_service_conversation_reply(text):
+    """Intercepte les intentions planifiees non encore automatisees."""
+    value = normalize_text(text).replace("-", " ").strip(" .!?")
+    value = re.sub(r"\s+", " ", value)
+
+    if re.fullmatch(
+        r"(?:enregistre|enregistrer|observe|observer|analyse|analyser) (?:mes |les )?habitudes? "
+        r"(?:chaque|tous les) matins?(?: a| vers)? \d{1,2}(?:h| heures?)?(?:\d{2})?",
+        value,
+    ):
+        return (
+            "J'ai compris que tu veux une observation planifiee de tes habitudes le matin. "
+            "La planification automatique reste desactivee tant qu'elle n'a pas ete configuree et validee explicitement."
+        )
+
+    return None
+
+
 def interpret(user_message):
     # Une formule de politesse finale est retiree avant l'analyse stricte.
     # Cela evite qu'un « stp » ou « s'il te plait » soit pris pour une partie
     # d'un nom de fichier. Le contenu litteral des commandes d'ecriture reste
     # toujours intact.
     original_message = str(user_message or "").strip()
+
+    connected_actions = _connected_service_actions(original_message)
+    if connected_actions:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "backend": "deterministic",
+            "understood": True,
+            "actions": connected_actions,
+        }
+
+    terrain_reply = _terrain_service_conversation_reply(original_message)
+    if terrain_reply:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "backend": "deterministic",
+            "understood": True,
+            "actions": [],
+            "reply": terrain_reply,
+            "conversation": True,
+        }
 
     # « note » seul est volontairement ambigu : ne jamais l'inventer comme
     # note.com et ne pas choisir entre Bloc-notes / OneNote à la place de
@@ -6768,6 +6919,17 @@ def interpret(user_message):
                 "Je peux lire ou écrire du texte dans le presse-papiers sur demande, "
                 "mais je n'exécute et je n'ouvre jamais automatiquement son contenu."
             ),
+            "conversation": True,
+        }
+
+    power_reply = _unsupported_power_action_reply(original_message)
+    if power_reply:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "backend": "deterministic",
+            "understood": True,
+            "actions": [],
+            "reply": power_reply,
             "conversation": True,
         }
 
@@ -6939,3 +7101,90 @@ def main():
 if __name__ == "__main__":
 
     main()
+# ============================================================
+# V12.1 - PLANIFICATION LOCALE CONTROLEE
+# ============================================================
+
+_interpret_before_scheduler_v121 = interpret
+
+_SCHEDULE_WEEKDAYS = {
+    "lundi": 0, "lundis": 0,
+    "mardi": 1, "mardis": 1,
+    "mercredi": 2, "mercredis": 2,
+    "jeudi": 3, "jeudis": 3,
+    "vendredi": 4, "vendredis": 4,
+    "samedi": 5, "samedis": 5,
+    "dimanche": 6, "dimanches": 6,
+}
+
+
+def _schedule_time_and_days(value):
+    plain = normalize_text(value).replace("-", " ").strip(" .!?")
+    plain = re.sub(r"\s+", " ", plain)
+    match = re.search(r"\b(?:a|vers)\s+(\d{1,2})(?:\s*h(?:\s*(\d{1,2}))?|\s*heures?(?:\s*(\d{1,2}))?)?\b", plain)
+    if not match:
+        return None
+    hour = int(match.group(1))
+    minute = int(match.group(2) or match.group(3) or 0)
+    if hour > 23 or minute > 59:
+        return None
+
+    days = list(range(7))
+    for label, day in _SCHEDULE_WEEKDAYS.items():
+        if re.search(rf"\b{label}\b", plain):
+            days = [day]
+            break
+    return {"type": "weekly", "time": f"{hour:02d}:{minute:02d}", "days": days}
+
+
+def _schedule_actions_v121(user_message):
+    plain = normalize_text(user_message).replace("-", " ").strip(" .!?")
+    plain = re.sub(r"\s+", " ", plain)
+
+    if plain in {
+        "liste mes planifications", "montre mes planifications", "mes planifications",
+        "liste mes automatisations", "montre mes automatisations", "mes automatisations",
+        "quelles sont mes planifications", "quelles sont mes automatisations",
+    }:
+        return [make_action("list_schedules", "all")]
+
+    ref_patterns = (
+        ("confirm_schedule", r"^(?:confirme|confirmer|valide|valider) (?:la )?(?:planification|automatisation) (p [0-9a-f]{8}|\d+)$"),
+        ("enable_schedule", r"^(?:active|activer|reactive|reactiver) (?:la )?(?:planification|automatisation) (p [0-9a-f]{8}|\d+)$"),
+        ("disable_schedule", r"^(?:desactive|desactiver|suspend|suspendre|pause) (?:la )?(?:planification|automatisation) (p [0-9a-f]{8}|\d+)$"),
+        ("delete_schedule", r"^(?:supprime|supprimer|annule|annuler) (?:la )?(?:planification|automatisation) (p [0-9a-f]{8}|\d+)$"),
+    )
+    for action_name, pattern in ref_patterns:
+        match = re.fullmatch(pattern, plain)
+        if match:
+            ref = match.group(1).replace(" ", "-") if match.group(1).startswith("p ") else match.group(1)
+            return [make_action(action_name, ref)]
+
+    trigger = _schedule_time_and_days(plain)
+    if not trigger:
+        return []
+
+    creation_prefix = r"(?:programme|programmer|planifie|planifier|automatise|automatiser|lance|lancer|ouvre|ouvrir|affiche|afficher|enregistre|enregistrer|observe|observer)"
+
+    if re.search(r"\b(?:routine|routine de travail)\b", plain) and re.match(creation_prefix, plain):
+        return [make_action("create_schedule_draft", "routine", {"kind": "routine", "scheduled_target": "work_start", "trigger": trigger})]
+
+    if re.search(r"\bbriefing\b", plain) and re.match(creation_prefix, plain):
+        return [make_action("create_schedule_draft", "briefing", {"kind": "briefing", "scheduled_target": "today", "trigger": trigger})]
+
+    if re.search(r"\bhabitudes?\b", plain) and re.match(creation_prefix, plain):
+        return [make_action("create_schedule_draft", "habit_summary", {"kind": "habit_summary", "scheduled_target": "today", "trigger": trigger})]
+
+    return []
+
+
+def interpret(user_message):
+    schedule_actions = _schedule_actions_v121(user_message)
+    if schedule_actions:
+        return {
+            "schema_version": SCHEMA_VERSION,
+            "backend": "deterministic",
+            "understood": True,
+            "actions": schedule_actions,
+        }
+    return _interpret_before_scheduler_v121(user_message)

@@ -1066,7 +1066,10 @@
       "disk",
       "cpu",
       "uptime",
-      "summary"
+      "summary",
+      "performance",
+      "agent",
+      "windows"
     ],
     "allow_from_routine": false,
     "allow_from_habit": false,
@@ -1253,5 +1256,59 @@
     "allow_from_routine": false,
     "allow_from_habit": false,
     "allow_automatic_action": false
+  },
+  "process_information_policy": {
+    "enabled": true,
+    "read_only": true,
+    "require_explicit_user_command": true,
+    "allowed_queries": [
+      "summary",
+      "top",
+      "top_cpu",
+      "top_memory"
+    ],
+    "maximum_listed_processes": 10,
+    "allow_process_termination": false,
+    "allow_from_routine": false,
+    "allow_from_habit": false,
+    "allow_automatic_query": false
+  },
+  "connected_services_policy": {
+    "enabled": true,
+    "read_only": true,
+    "https_only": true,
+    "require_explicit_user_command": true,
+    "allow_automatic_morning_briefing": true,
+    "allow_from_routine": false,
+    "allow_from_habit": false,
+    "allow_automatic_actions_from_content": false,
+    "allowed_hosts": [
+      "geocoding-api.open-meteo.com",
+      "api.open-meteo.com",
+      "news.google.com",
+      "api.github.com"
+    ],
+    "timeout_seconds": 4.0,
+    "maximum_response_bytes": 1048576,
+    "maximum_news_response_bytes": 2097152,
+    "allow_http_post": false,
+    "allow_authentication": false,
+    "allow_cookies": false
+  },
+  "scheduler_policy": {
+    "enabled": true,
+    "local_only": true,
+    "require_explicit_confirmation": true,
+    "allow_arbitrary_commands": false,
+    "allowed_kinds": [
+      "routine",
+      "briefing",
+      "habit_summary"
+    ],
+    "allow_destructive_actions": false,
+    "allow_shell_actions": false,
+    "execute_only_while_agentlocal_running": true,
+    "maximum_schedules": 20,
+    "catch_up_minutes": 60
   }
 }

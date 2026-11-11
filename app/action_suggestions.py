@@ -218,22 +218,162 @@ def _suggestion_items(user_message: object, actions: list[dict], display_results
         else:
             items.append(("recent", "Voir les fichiers les plus récents", "montre-moi les 5 fichiers les plus récents"))
 
-    elif action in {"find_filesystem_item", "advanced_file_search"}:
+    elif action == "find_filesystem_item":
+        items.append(("open_first", "Ouvrir le premier résultat", "ouvre le premier"))
+
+    elif action == "advanced_file_search":
+        # Les suggestions prolongent la recherche courante au lieu de repartir
+        # sur tous les fichiers. Cela évite les rescans inutiles et les boucles
+        # « résultats récents -> mêmes résultats récents ».
+        kind = _norm(params.get("file_kind")) or "any"
+        sort = _norm(params.get("sort")) or "modified_desc"
+        date_filter = _norm(params.get("date_filter")) or "any"
+        kind_word = {
+            "any": "fichiers",
+            "pdf": "PDF",
+            "word": "fichiers Word",
+            "excel": "fichiers Excel",
+            "powerpoint": "présentations PowerPoint",
+            "image": "images",
+            "video": "vidéos",
+            "audio": "fichiers audio",
+            "text": "fichiers texte",
+        }.get(kind, "fichiers")
+        command_kind = {
+            "any": "fichiers",
+            "pdf": "PDF",
+            "word": "fichiers word",
+            "excel": "fichiers excel",
+            "powerpoint": "fichiers powerpoint",
+            "image": "images",
+            "video": "vidéos",
+            "audio": "fichiers audio",
+            "text": "fichiers txt",
+        }.get(kind, "fichiers")
+        root_suffix = ""
+        if target and target != "auto":
+            root_suffix = f" dans {_pretty_root(target)}"
+
+        items.append(("open_first", "Ouvrir le premier résultat", "ouvre le premier"))
+        if sort != "size_desc":
+            items.append((
+                "largest_same_filter",
+                f"Voir les 5 {kind_word} les plus gros",
+                f"montre-moi les 5 {command_kind} les plus gros{root_suffix}",
+            ))
+        if date_filter != "this_week" and len(items) < MAX_SUGGESTIONS:
+            items.append((
+                "week_same_filter",
+                f"Voir les {kind_word} modifiés cette semaine",
+                f"cherche les {command_kind} modifiés cette semaine{root_suffix}",
+            ))
+        elif sort != "modified_desc" and len(items) < MAX_SUGGESTIONS:
+            items.append((
+                "recent_same_filter",
+                f"Voir les 5 {kind_word} les plus récents",
+                f"montre-moi les 5 {command_kind} les plus récents{root_suffix}",
+            ))
+
+    elif action == "create_schedule_draft":
+        text = "\n".join(str(value or "") for value in display_results)
+        match = re.search(r"\b(p-[0-9a-f]{8})\b", text, flags=re.IGNORECASE)
+        if match:
+            schedule_id = match.group(1).lower()
+            items.extend([
+                ("confirm_schedule", "Confirmer cette planification", f"confirme la planification {schedule_id}"),
+                ("list_schedules", "Voir mes planifications", "liste mes planifications"),
+            ])
+
+    elif action in {"confirm_schedule", "enable_schedule", "disable_schedule", "delete_schedule"}:
+        items.append(("list_schedules", "Voir mes planifications", "liste mes planifications"))
+
+    elif action == "list_schedules":
         items.extend([
-            ("open_first", "Ouvrir le premier résultat", "ouvre le premier"),
-            ("recent", "Afficher les résultats les plus récents", "montre-moi les 5 fichiers les plus récents"),
+            ("briefing_7", "Planifier le briefing à 7 h", "programme mon briefing chaque matin à 7h"),
+            ("routine_7", "Planifier ma routine à 7 h", "programme ma routine chaque matin à 7h"),
         ])
 
     elif action == "read_system_info":
-        items.extend([
-            ("ram", "Voir l'utilisation de la RAM", "combien de mémoire il me reste"),
-            ("disk", "Voir l'espace disque disponible", "espace disque"),
-            ("network", "Vérifier l'état du réseau", "mon réseau fonctionne ?"),
-        ])
+        if target == "agent":
+            items.extend([
+                ("pc", "Voir l'état général du PC", "donne-moi l'état du PC"),
+                ("processes", "Voir les processus les plus gourmands", "montre les processus les plus gourmands"),
+                ("network", "Voir l'état de la connexion", "quel est l'état de ma connexion ?"),
+            ])
+        elif target == "windows":
+            items.extend([
+                ("processes", "Voir les processus les plus gourmands", "montre les processus les plus gourmands"),
+                ("pc", "Voir l'état général du PC", "donne-moi l'état du PC"),
+            ])
+        elif target == "summary":
+            items.extend([
+                ("processes", "Voir les processus les plus gourmands", "montre les processus les plus gourmands"),
+                ("large_files", "Chercher les fichiers les plus lourds", "montre-moi les 10 fichiers les plus gros"),
+                ("performance", "Ouvrir le tableau de performances", "affiche le tableau de performances du PC"),
+            ])
+        elif target == "performance":
+            items.extend([
+                ("processes", "Voir les processus les plus gourmands", "montre les processus les plus gourmands"),
+                ("large_files", "Chercher les fichiers les plus lourds", "montre-moi les 10 fichiers les plus gros"),
+                ("network", "Voir l'activité réseau", "quel est le trafic réseau actuel"),
+            ])
+        else:
+            items.extend([
+                ("performance", "Ouvrir le tableau de performances", "affiche le tableau de performances du PC"),
+                ("processes", "Voir les processus les plus gourmands", "montre les processus les plus gourmands"),
+                ("pc", "Revenir à l'état général du PC", "donne-moi l'état du PC"),
+            ])
+
+    elif action == "read_process_info":
+        if target == "top_cpu":
+            items.extend([
+                ("memory", "Trier les processus par RAM", "montre les processus qui consomment le plus de RAM"),
+                ("performance", "Ouvrir le tableau de performances", "affiche le tableau de performances du PC"),
+                ("pc", "Voir l'état général du PC", "donne-moi l'état du PC"),
+            ])
+        elif target == "top_memory":
+            items.extend([
+                ("cpu", "Trier les processus par CPU", "montre les processus qui consomment le plus de CPU"),
+                ("performance", "Ouvrir le tableau de performances", "affiche le tableau de performances du PC"),
+                ("pc", "Voir l'état général du PC", "donne-moi l'état du PC"),
+            ])
+        else:
+            items.extend([
+                ("cpu", "Trier par consommation CPU", "montre les processus qui consomment le plus de CPU"),
+                ("memory", "Trier par consommation RAM", "montre les processus qui consomment le plus de RAM"),
+                ("performance", "Ouvrir le tableau de performances", "affiche le tableau de performances du PC"),
+            ])
 
     elif action == "read_network_info":
         items.extend([
             ("link_speed", "Voir la vitesse de liaison", "quelle est la vitesse de ma connexion ?"),
+            ("pc", "Voir l'état général du PC", "donne-moi l'état du PC"),
+        ])
+
+    elif action == "read_weather":
+        items.extend([
+            ("news", "Voir les actualités du jour", "donne-moi les actualités du jour"),
+            ("briefing", "Ouvrir le briefing du jour", "briefing du jour"),
+            ("pc", "Voir l'état général du PC", "donne-moi l'état du PC"),
+        ])
+
+    elif action == "read_news":
+        items.extend([
+            ("weather", "Voir la météo du jour", "quelle est la météo d'aujourd'hui ?"),
+            ("briefing", "Ouvrir le briefing du jour", "briefing du jour"),
+            ("pc", "Voir l'état général du PC", "donne-moi l'état du PC"),
+        ])
+
+    elif action == "read_daily_briefing":
+        items.extend([
+            ("weather", "Actualiser la météo", "quelle est la météo d'aujourd'hui ?"),
+            ("news", "Voir les actualités du jour", "donne-moi les actualités du jour"),
+            ("updates", "Vérifier AgentLocal en ligne", "vérifie mes mises à jour"),
+        ])
+
+    elif action == "check_online_updates":
+        items.extend([
+            ("briefing", "Ouvrir le briefing du jour", "briefing du jour"),
             ("pc", "Voir l'état général du PC", "donne-moi l'état du PC"),
         ])
 

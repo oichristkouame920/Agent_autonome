@@ -35,3 +35,6 @@ Desktop.ini
 .env.*
 config/browser_bridge.json
 browser_extension/bridge_config.js
+
+# Etat local du briefing connecte
+runtime/connected_services_state.json

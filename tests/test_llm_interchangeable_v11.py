@@ -1,5 +1,3 @@
-import json
-import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -14,12 +12,32 @@ class LlmInterchangeableV11Tests(unittest.TestCase):
         self.assertTrue(callable(llama_backend.get_status))
 
     def test_missing_model_means_runtime_unavailable(self):
-        ok, reason = llama_backend.availability()
+        # Test isole : ne depend jamais du modele reel installe sur le PC.
+        fake_model = {
+            "llama_cli_path": Path("__agentlocal_test_missing_llama_cli__.exe"),
+            "path": Path("__agentlocal_test_missing_model__.gguf"),
+            "companion_paths": [],
+            "mmproj_path": None,
+            "probe_runtime_on_startup": False,
+        }
+        with patch.object(
+            llama_backend,
+            "get_active_model_config",
+            return_value=("missing_test_model", fake_model, {}),
+        ):
+            ok, reason = llama_backend.availability()
         self.assertFalse(ok)
         self.assertTrue(reason)
 
     def test_backend_manager_falls_back_when_model_missing(self):
-        ok, name, module, warning = backend_manager.select_backend()
+        # Le fallback doit etre teste en simulant l'indisponibilite du LLM,
+        # meme si un vrai modele GGUF est installe sur la machine courante.
+        with patch.object(
+            llama_backend,
+            "availability",
+            return_value=(False, "Modele GGUF de test introuvable."),
+        ):
+            ok, name, module, warning = backend_manager.select_backend()
         self.assertTrue(ok)
         self.assertEqual(name, "deterministic")
         self.assertIsNotNone(module)
@@ -44,7 +62,7 @@ class LlmInterchangeableV11Tests(unittest.TestCase):
                 },
                 {},
             )
-            result = llama_backend.interpret("je voudrais utiliser mon éditeur de code")
+            result = llama_backend.interpret("je voudrais utiliser mon editeur de code")
         self.assertTrue(result["understood"])
         self.assertEqual(result["actions"][0]["action"], "open_application")
         self.assertEqual(result["actions"][0]["target"], "vscode")

@@ -1,4 +1,4 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
 $py = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
@@ -9,6 +9,25 @@ if (-not (Test-Path $py)) {
     } else {
         throw "Python AgentLocal introuvable (.venv ou runtime portable)."
     }
+}
+
+Write-Host ""
+Write-Host "=== 0. CONTROLE STRUCTUREL ==="
+$requiredFiles = @(
+    "project_version.py",
+    "backends\deterministic_backend.py",
+    "config\permissions.json",
+    "config\connected_services.json",
+    "app\connected_services.py",
+    "app\scheduler.py",
+    "app\gui.py"
+)
+foreach ($rel in $requiredFiles) {
+    $target = Join-Path $PSScriptRoot $rel
+    if (-not (Test-Path $target)) {
+        throw "Fichier AgentLocal requis manquant : $rel"
+    }
+    Write-Host "OK :" $rel
 }
 
 Write-Host ""
@@ -33,7 +52,9 @@ foreach ($file in $jsonFiles) {
 
 Write-Host ""
 Write-Host "=== 3. VERIFICATEURS AGENTLOCAL ==="
-$verifiers = Get-ChildItem $PSScriptRoot -Filter "verifier_*.py" -File | Sort-Object Name
+$verifiers = Get-ChildItem $PSScriptRoot -Filter "verifier_*.py" -File |
+    Where-Object { $_.Name -notmatch "^verifier_conformite_pack_" -or $_.Name -eq "verifier_conformite_pack_v12.py" } |
+    Sort-Object Name
 foreach ($file in $verifiers) {
     Write-Host ""
     Write-Host "TEST :" $file.Name
@@ -52,9 +73,9 @@ foreach ($file in $verifiers) {
 }
 
 Write-Host ""
-Write-Host "=== 4. PYTEST COMPLET ==="
-& $py -m pytest -q tests
-if ($LASTEXITCODE -ne 0) { throw "Certains tests Pytest AgentLocal ont echoue." }
+Write-Host "=== 4. TESTS PYTHON COMPLETS (UNITTEST) ==="
+& $py -m unittest discover -s tests -p "test_*.py" -v
+if ($LASTEXITCODE -ne 0) { throw "Certains tests Python AgentLocal ont echoue." }
 
 Write-Host ""
 Write-Host "============================================="

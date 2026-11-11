@@ -2938,7 +2938,7 @@ def get_application_window_records(
         ]
     )
 
-    if not process_ids:
+    if not process_ids and app_name != "sticky_notes":
         return []
 
     expected_pids = set(
@@ -3016,6 +3016,14 @@ def get_application_window_records(
                         expected_pids
                     )
                 )
+
+            # Pense-bêtes récent peut être hébergé par un processus Windows
+            # différent de Microsoft.Notes.exe. On ne l'accepte que si le
+            # titre visible correspond explicitement à l'application connue.
+            if app_name == "sticky_notes" and app_process_id is None:
+                title_lower = title.lower()
+                if any(token in title_lower for token in ("pense-bêtes", "pense-betes", "sticky notes")):
+                    app_process_id = window_pid
 
             # ------------------------------------------------
             # Explorateur : jamais le shell du Bureau

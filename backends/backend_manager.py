@@ -580,6 +580,7 @@ DETERMINISTIC_PREFLIGHT_ACTIONS = {
     "open_website",
     "close_website",
     "read_system_info",
+    "read_process_info",
     "read_power_info",
     "read_network_info",
     "read_clipboard",
@@ -686,6 +687,16 @@ def interpret(
     quel moteur est réellement utilisé.
     """
 
+    # V11.8.1 PERFORMANCE : le préflight déterministe doit arriver AVANT
+    # toute sélection/probe du backend LLM. Dans l'ancienne séquence, une
+    # commande pourtant simple pouvait d'abord lancer `llama-cli --version`
+    # ou vérifier le runtime avant d'être finalement traitée localement.
+    # Les intentions fermées restent exactement les mêmes ; on supprime
+    # seulement un coût inutile sur le chemin rapide.
+    preflight = _deterministic_preflight(user_message)
+    if preflight is not None:
+        return preflight
+
     success, backend_name, module, warning = (
         select_backend()
     )
@@ -699,16 +710,6 @@ def interpret(
             "actions": [],
             "error": warning,
         }
-
-    # Les intentions explicites et fermees sont d'abord verifiees par le
-    # moteur deterministe. Cela evite de charger/invoquer le LLM pour une
-    # commande simple et garantit le meme comportement dans la GUI.
-    if backend_name != "deterministic":
-        preflight = _deterministic_preflight(user_message)
-        if preflight is not None:
-            if warning:
-                preflight["backend_warning"] = warning
-            return preflight
 
     try:
 

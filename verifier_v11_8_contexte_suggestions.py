@@ -20,7 +20,7 @@ def action(text):
     return actions[0]
 
 
-assert AGENTLOCAL_VERSION == "11.8"
+assert tuple(int(x) for x in AGENTLOCAL_VERSION.split(".")[:2]) >= (11, 8)
 assert FIELD_LANGUAGE_PATCH_VERSION == AGENTLOCAL_BUILD
 assert action("ouvrre bloc note")["target"] == "notepad"
 assert action("donne moi letat du pc")["target"] == "summary"
@@ -42,4 +42,4 @@ for item in items:
     result = interpret(item.command)
     assert result.get("understood"), (item.command, result)
 
-print("V11.8 contexte + suggestions actionnables : OK")
+print("V11.8.1 contexte + suggestions actionnables : OK")

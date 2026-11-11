@@ -65,7 +65,7 @@ class PortableRuntimeV112Tests(unittest.TestCase):
         self.assertEqual(executable, ROOT / "tools" / "llama.cpp" / "llama-cli.exe")
 
     def test_launcher_does_not_embed_old_machine_path(self):
-        content = (ROOT / "lancer_agentlocal_gui.bat").read_text(encoding="utf-8", errors="replace").casefold()
+        content = (ROOT / "AgentLocal.bat").read_text(encoding="utf-8", errors="replace").casefold()
         self.assertNotIn(r"c:\\users\\ancienpc", content)
         self.assertIn(r"runtime\python\python.exe", content)
         self.assertIn(r".venv\scripts\python.exe", content)
