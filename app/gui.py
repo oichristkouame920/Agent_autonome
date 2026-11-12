@@ -32,6 +32,7 @@ if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
 from project_version import AGENTLOCAL_VERSION  # noqa: E402
+from project_version import AGENTLOCAL_PATCH  # noqa: E402
 from connected_services import (  # noqa: E402
     build_daily_briefing,
     format_daily_briefing,
@@ -80,6 +81,7 @@ from user_profile import (  # noqa: E402
 )
 from learning_profile import learning_dashboard, restart_initial_learning, set_learning_enabled  # noqa: E402
 from onboarding import OnboardingWizard  # noqa: E402
+from security_center import open_security_center  # noqa: E402
 from runtime_resilience import (  # noqa: E402
     critical_health_messages,
     format_health_summary,
@@ -515,7 +517,7 @@ class AgentLocalGUI:
         brand = tk.Frame(sidebar, bg=COLORS["sidebar"])
         brand.grid(row=0, column=0, sticky="ew", padx=18, pady=(22, 24))
         tk.Label(brand, text="AgentLocal", bg=COLORS["sidebar"], fg="white", font=("Segoe UI", 17, "bold")).pack(anchor="w")
-        tk.Label(brand, text=f"Version {AGENTLOCAL_VERSION}", bg=COLORS["sidebar"], fg="#AAB4C4", font=("Segoe UI", 9)).pack(anchor="w", pady=(3, 0))
+        tk.Label(brand, text=f"Version {AGENTLOCAL_PATCH}", bg=COLORS["sidebar"], fg="#AAB4C4", font=("Segoe UI", 9)).pack(anchor="w", pady=(3, 0))
 
         for row, (label, key) in enumerate(self.NAV_ITEMS, start=1):
             button = tk.Button(
@@ -1474,7 +1476,7 @@ class AgentLocalGUI:
         card.grid(row=1, column=0, sticky="ew", pady=(14, 0))
         card.grid_columnconfigure(1, weight=1)
         rows = [
-            ("Version", AGENTLOCAL_VERSION),
+            ("Version", AGENTLOCAL_PATCH),
             ("Moteur", self.backend_var),
             ("État", self.health_var),
             ("Apprentissage", self.learning_var),
@@ -1495,6 +1497,7 @@ class AgentLocalGUI:
         tk.Button(actions, text="Lancer un diagnostic complet", command=lambda: self.run_shortcut("quel est l'état de mon PC", "Diagnostic du PC"), relief="flat", bd=0, bg=COLORS["accent"], fg="white", activebackground=COLORS["accent_hover"], activeforeground="white", font=("Segoe UI", 9, "bold"), padx=14, pady=8, cursor="hand2", highlightthickness=0).pack(side="left")
         self.startup_toggle_button = tk.Button(actions, text="Activer au démarrage", command=self._toggle_windows_startup, relief="flat", bd=0, bg=COLORS["soft_neutral"], fg=COLORS["text"], font=("Segoe UI", 9, "bold"), padx=14, pady=8, cursor="hand2", highlightthickness=0)
         self.startup_toggle_button.pack(side="left", padx=(8, 0))
+        tk.Button(actions, text="Securite et autorisations", command=lambda: open_security_center(self.root), relief="flat", bd=0, bg=COLORS["soft_accent"], fg=COLORS["accent"], font=("Segoe UI", 9, "bold"), padx=14, pady=8, cursor="hand2").pack(side="left", padx=(8, 0))
 
     def _refresh_startup_status(self) -> None:
         try:

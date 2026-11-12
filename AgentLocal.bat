@@ -25,6 +25,7 @@ echo [6] Preparer les dependances hors connexion
 echo [7] Construire / mettre a jour le runtime Python portable
 echo [8] Afficher la version
 echo [9] Creer / reparer le raccourci AgentLocal
+echo [10] Securite et autorisations
 echo [0] Quitter
 echo.
 set /p "CHOIX=Choix : "
@@ -38,6 +39,7 @@ if "%CHOIX%"=="6" goto OFFLINE
 if "%CHOIX%"=="7" goto RUNTIME
 if "%CHOIX%"=="8" goto VERSION
 if "%CHOIX%"=="9" goto SHORTCUT
+if "%CHOIX%"=="10" goto SECURITY
 if "%CHOIX%"=="0" goto END
 
 echo.
@@ -66,6 +68,9 @@ if /I "%CMD%"=="install" goto SETUP
 if /I "%CMD%"=="offline" goto OFFLINE
 if /I "%CMD%"=="runtime" goto RUNTIME
 if /I "%CMD%"=="version" goto VERSION
+if /I "%CMD%"=="security" goto SECURITY
+if /I "%CMD%"=="autorisation" goto SECURITY
+if /I "%CMD%"=="permissions" goto SECURITY
 if /I "%CMD%"=="shortcut" goto SHORTCUT
 if /I "%CMD%"=="raccourci" goto SHORTCUT
 if /I "%CMD%"=="menu" goto MENU
@@ -222,6 +227,17 @@ pause
 exit /b %RC%
 
 
+:SECURITY
+call :FIND_PYTHON
+if not defined PY_MODE goto NO_PYTHON
+call :RUN_PY "app\security_center.py"
+set "RC=%ERRORLEVEL%"
+if not "%RC%"=="0" (
+    echo Impossible d ouvrir le centre de securite. Code : %RC%
+    pause
+)
+exit /b %RC%
+
 :SHORTCUT
 if not exist "runtime\create_agentlocal_shortcuts.vbs" (
     echo Script de raccourci introuvable.
@@ -247,7 +263,7 @@ exit /b %RC%
 
 :VERSION
 if exist "project_version.py" (
-    findstr /B /C:"AGENTLOCAL_VERSION" /C:"AGENTLOCAL_BUILD" /C:"AGENTLOCAL_CHANNEL" "project_version.py"
+    findstr /B /C:"AGENTLOCAL_VERSION" /C:"AGENTLOCAL_PATCH" /C:"AGENTLOCAL_BUILD" /C:"AGENTLOCAL_CHANNEL" "project_version.py"
 ) else (
     echo project_version.py introuvable.
 )
@@ -451,6 +467,7 @@ echo   AgentLocal.bat setup      Prepare AgentLocal sur un nouveau PC
 echo   AgentLocal.bat offline    Prepare les dependances hors connexion
 echo   AgentLocal.bat runtime    Construit le runtime Python portable
 echo   AgentLocal.bat version    Affiche la version courante
+echo   AgentLocal.bat security   Ouvre le centre de securite
 echo   AgentLocal.bat menu       Affiche le menu
 echo.
 echo Les anciens .bat sont archives automatiquement dans :
