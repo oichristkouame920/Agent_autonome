@@ -42,6 +42,11 @@ $requiredFiles = @(
     "verifier_v12_3_ux_premium.py",
     "verifier_v12_4_personalization.py",
     "verifier_v12_5_personalisation_notifications.py",
+    "verifier_v12_5_1_branding_launcher.py",
+    "assets\agentlocal.ico",
+    "assets\agentlocal_icon.png",
+    "runtime\start_agentlocal_gui.vbs",
+    "runtime\create_agentlocal_shortcuts.vbs",
     "configure_windows_startup_v12_2_2.py",
     "upgrade_automation_config_v12_2_2.py"
 )

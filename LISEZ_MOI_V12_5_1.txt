@@ -1,0 +1,19 @@
+AGENTLOCAL V12.5.1 - ICONE ET LANCEMENT RAPIDE
+
+Installation :
+1. Fermer AgentLocal.
+2. Extraire ce ZIP directement dans C:\Users\cdn09\AgentLocal (ou dans la racine AgentLocal de l'hote).
+3. Accepter le remplacement des fichiers.
+4. Lancer AgentLocal.bat.
+5. Choisir [4] Verifier / finaliser l'installation.
+6. Choisir [9] Creer / reparer le raccourci AgentLocal.
+
+Resultat :
+- icone AgentLocal dans la fenetre et la barre des taches ;
+- petit ecran de demarrage lors d'un lancement manuel ;
+- raccourci AgentLocal sur le Bureau ;
+- raccourci AgentLocal dans le menu Demarrer ;
+- lancement direct de l'interface sans afficher le menu .bat ;
+- scripts VBS ASCII sans BOM pour eviter l'erreur Windows Script Host 800A0408.
+
+Le demarrage automatique Windows existant n'est pas modifie.

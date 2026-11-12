@@ -4567,6 +4567,104 @@ from session_context import (
     set_pending_choice,
 )
 
+from command_sequences import (
+    split_explicit_sequence,
+    remember_sequence,
+    describe_last_sequence,
+)
+
+# V12.5.2 : une sequence est volontairement limitee aux consultations
+# et ouvertures sans ecriture. Les operations sensibles restent unitaires.
+SAFE_SEQUENCE_ACTIONS = frozenset({
+    "open_application", "check_application", "open_website",
+    "list_directory", "list_directory_auto", "find_filesystem_item",
+    "advanced_file_search", "read_system_info", "read_process_info",
+    "read_power_info", "read_network_info", "read_audio_state",
+    "list_browser_tabs", "check_browser_site", "read_weather",
+    "read_news", "read_daily_briefing", "check_online_updates",
+})
+
+_SEQUENCE_HISTORY_QUESTIONS = frozenset({
+    "resume les dernieres etapes", "resume la derniere sequence",
+    "quelles etapes as tu executees", "quelles etapes as tu faites",
+    "ou en est la derniere tache", "qu as tu fait dans la derniere tache",
+})
+
+
+def _execute_explicit_sequence(steps):
+    """Valide toute la sequence avant d'effectuer sa premiere action.
+
+    Chaque etape est reverifiee avec le parseur deterministe strict ; le LLM
+    ne peut ni ajouter d'actions ni contourner le contrat et les permissions.
+    """
+    # Meme une tentative refusee remplace l'ancien resume de sequence.
+    remember_sequence(steps, [], completed=False)
+    planned = []
+    for index, step in enumerate(steps, start=1):
+        result = interpret_instruction(step)
+        actions = result.get("actions", []) if isinstance(result, dict) else []
+        if not isinstance(actions, list) or len(actions) != 1:
+            return (
+                f"Aucune action lancee : l'etape {index}/{len(steps)} "
+                "n'est pas une commande unique suffisamment precise."
+            )
+        action_data = actions[0]
+        if not isinstance(action_data, dict):
+            return f"Aucune action lancee : format invalide a l'etape {index}."
+        action = str(action_data.get("action", "")).strip().lower()
+        if action not in SAFE_SEQUENCE_ACTIONS:
+            return (
+                f"Aucune action lancee : l'etape {index}/{len(steps)} "
+                f"({action or 'inconnue'}) necessite une commande separee. "
+                "Les modifications, suppressions et autres actions sensibles "
+                "ne sont pas automatisees dans une sequence."
+            )
+        valid, reason = validate_action(action_data)
+        if not valid:
+            return f"Aucune action lancee : etape {index} invalide : {reason}"
+        try:
+            strict = interpret_deterministic_for_proof(step)
+            candidates = strict.get("actions", []) if isinstance(strict, dict) else []
+        except Exception:
+            candidates = []
+        if not any(isinstance(candidate, dict) and candidate == action_data for candidate in candidates):
+            return (
+                f"Aucune action lancee : l'etape {index} n'est pas "
+                "confirmee par le moteur de securite local."
+            )
+        planned.append((step, action_data))
+
+    lines = []
+    outcomes = []
+    activities = []
+    for index, (step, action_data) in enumerate(planned, start=1):
+        try:
+            success, message = execute_action(action_data, user_message=step)
+        except Exception as error:
+            success, message = False, f"Erreur de l'outil : {type(error).__name__}"
+        success = bool(success)
+        outcomes.append(success)
+        lines.append(
+            f"Etape {index}/{len(planned)} "
+            + ("reussie" if success else "en echec")
+            + f" : {message}"
+        )
+        if success:
+            _remember_last_entity([action_data], [str(message)])
+            _register_browser_tab_number_choices([action_data], [str(message)])
+            action = str(action_data.get("action", "")).lower()
+            target = str(action_data.get("target", "")).lower()
+            if action in LEARNABLE_AGENT_ACTIONS and is_action_learnable(action, target):
+                activities.append({"action": action, "target": target, "success": True})
+        else:
+            break
+    remember_sequence(steps, outcomes, completed=(len(outcomes) == len(steps) and all(outcomes)))
+    if activities:
+        learn_from_actions(activities)
+    if len(outcomes) < len(steps):
+        lines.append(f"{len(steps) - len(outcomes)} etape(s) non executee(s) apres cet echec.")
+    return "\n\n".join(lines)
+
 
 def _normalize_session_phrase(value):
     text = str(value or "").strip().lower().replace("’", "'")
@@ -4594,7 +4692,11 @@ def _resolve_session_reference_command(user_message):
         if kind in {"website", "browser_tab"}:
             return f"ferme {target}"
 
-    if text in {"retourne dessus", "repasse dessus", "passe dessus", "mets ca devant", "ramene ca devant"}:
+    if text in {"ouvre le", "ouvre la", "ouvre ca", "ouvre cela", "rouvre le", "rouvre la", "relance le", "relance la", "relance ca"}:
+        if kind in {"application", "website"}:
+            return f"ouvre {target}"
+
+    if text in {"retourne dessus", "repasse dessus", "passe dessus", "mets ca devant", "ramene ca devant", "reviens dessus", "reviens sur ca"}:
         if kind in {"website", "browser_tab"}:
             return f"passe sur {target}"
         if kind == "application":
@@ -4702,8 +4804,12 @@ def _register_browser_tab_number_choices(actions, display_results):
 
 
 def process_instruction(
-    user_message
+    user_message,
+    _depth=0,
 ):
+    # Evite les cycles entre expressions apprises, suggestions et references.
+    if _depth >= 6:
+        return "Je m'arrete : trop de reformulations successives. Precise ta demande."
 
     # V11.8 : refus/annulation d'une proposition ou d'un choix en attente.
     if is_reject_suggestion_message(user_message):
@@ -4718,7 +4824,7 @@ def process_instruction(
     if suggestion_command:
         clear_pending_suggestion()
         clear_pending_choice()
-        return process_instruction(suggestion_command)
+        return process_instruction(suggestion_command, _depth=_depth + 1)
 
     if is_accept_suggestion_message(user_message):
         return "Je n’ai aucune suggestion en attente pour le moment."
@@ -4726,11 +4832,24 @@ def process_instruction(
     choice_command = resolve_pending_choice(user_message)
     if choice_command:
         clear_pending_suggestion()
-        return process_instruction(choice_command)
+        return process_instruction(choice_command, _depth=_depth + 1)
+
+    if _normalize_session_phrase(user_message).replace("-", " ") in _SEQUENCE_HISTORY_QUESTIONS:
+        return describe_last_sequence()
 
     contextual_command = _resolve_session_reference_command(user_message)
     if contextual_command:
-        return process_instruction(contextual_command)
+        return process_instruction(contextual_command, _depth=_depth + 1)
+
+    # V12.5.2 : la commande composee est analysee avant tout appel LLM global.
+    # Une etape invalide bloque l'ensemble, sans effet de bord.
+    steps, sequence_error = split_explicit_sequence(user_message)
+    if sequence_error:
+        return "Aucune action lancee : " + sequence_error
+    if steps:
+        clear_pending_suggestion()
+        clear_pending_choice()
+        return _execute_explicit_sequence(steps)
 
     # V12.5 : une expression explicitement apprise par cet hôte repasse par
     # toutes les validations normales. Elle ne contourne jamais le moteur.
@@ -4740,7 +4859,7 @@ def process_instruction(
         except Exception:
             learned_command = None
         if learned_command and _normalize_session_phrase(learned_command) != _normalize_session_phrase(user_message):
-            return process_instruction(learned_command)
+            return process_instruction(learned_command, _depth=_depth + 1)
 
     # Une nouvelle demande sans rapport invalide les anciennes suggestions.
     clear_pending_suggestion()

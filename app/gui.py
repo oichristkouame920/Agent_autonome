@@ -101,6 +101,8 @@ except Exception as error:  # L'interface doit rester visible meme si le coeur e
     log_exception("gui.import_agent", error)
 
 APP_TITLE = "AgentLocal"
+APP_ICON_ICO = ROOT_DIR / "assets" / "agentlocal.ico"
+APP_ICON_PNG = ROOT_DIR / "assets" / "agentlocal_icon.png"
 MAX_COMMAND_LENGTH = 2000
 POLL_INTERVAL_MS = 80
 DASHBOARD_REFRESH_MS = 3000
@@ -155,6 +157,62 @@ CARD_META = {
 
 if agent is not None:
     agent.DEBUG = False
+
+
+
+def _set_windows_app_id() -> None:
+    """Force une identite AgentLocal stable dans la barre des taches Windows."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("AgentLocal.Desktop")
+    except Exception:
+        pass
+
+
+def _apply_window_icon(window: tk.Misc) -> None:
+    """Applique l'icone AgentLocal sans rendre Pillow obligatoire."""
+    try:
+        if APP_ICON_ICO.exists():
+            window.iconbitmap(default=str(APP_ICON_ICO))
+    except Exception:
+        pass
+    try:
+        if APP_ICON_PNG.exists():
+            icon = tk.PhotoImage(file=str(APP_ICON_PNG))
+            window.iconphoto(True, icon)
+            setattr(window, "_agentlocal_icon_ref", icon)
+    except Exception:
+        pass
+
+
+def _show_startup_splash(root: tk.Tk, duration_ms: int = 850) -> None:
+    """Petit ecran de demarrage local, affiche uniquement lors d'un lancement manuel."""
+    try:
+        splash = tk.Toplevel(root)
+        splash.overrideredirect(True)
+        splash.configure(bg="#101A2E")
+        splash.attributes("-topmost", True)
+        width, height = 430, 250
+        sw = splash.winfo_screenwidth()
+        sh = splash.winfo_screenheight()
+        splash.geometry(f"{width}x{height}+{max(0,(sw-width)//2)}+{max(0,(sh-height)//2)}")
+        frame = tk.Frame(splash, bg="#101A2E", highlightthickness=1, highlightbackground="#214A7B")
+        frame.pack(fill="both", expand=True)
+        if APP_ICON_PNG.exists():
+            image = tk.PhotoImage(file=str(APP_ICON_PNG))
+            # 512 -> environ 128 px, sans dependance externe.
+            image = image.subsample(4, 4)
+            splash._agentlocal_splash_image = image
+            tk.Label(frame, image=image, bg="#101A2E", bd=0).pack(pady=(26, 8))
+        tk.Label(frame, text="AgentLocal", bg="#101A2E", fg="#F6FAFF", font=("Segoe UI", 20, "bold")).pack()
+        tk.Label(frame, text="Assistant local prêt à travailler", bg="#101A2E", fg="#AFC4E8", font=("Segoe UI", 9)).pack(pady=(4, 0))
+        tk.Label(frame, text="Démarrage…", bg="#101A2E", fg="#43D0C8", font=("Segoe UI", 9, "bold")).pack(pady=(13, 0))
+        _apply_window_icon(splash)
+        splash.after(max(350, int(duration_ms)), splash.destroy)
+    except Exception:
+        pass
 
 
 def normalize_user_command(value: str) -> str:
@@ -353,7 +411,7 @@ class AgentLocalGUI:
         self.root.after(2500, self._scheduler_loop)
         self.root.after(5000, self._notification_digest_loop)
         if not self.start_hidden:
-            self.root.after(650, self._maybe_show_onboarding)
+            self.root.after(1250, self._maybe_show_onboarding)
         self.root.after(1800, self._onboarding_visibility_loop)
 
     def _refresh_daily_quote(self) -> None:
@@ -371,6 +429,7 @@ class AgentLocalGUI:
     # ------------------------------------------------------------------
     def _configure_window(self) -> None:
         self.root.title(f"{APP_TITLE} - Espace de travail local")
+        _apply_window_icon(self.root)
         self.root.geometry("1180x760")
         self.root.minsize(960, 640)
         self.root.configure(bg=COLORS["bg"])
@@ -2225,6 +2284,7 @@ class AgentLocalGUI:
 
 def main() -> None:
     start_hidden = "--background" in sys.argv or "--autostart" in sys.argv
+    _set_windows_app_id()
     guard = InstanceGuard()
     if guard.already_running:
         if not start_hidden:
@@ -2233,6 +2293,8 @@ def main() -> None:
         return
     root = tk.Tk()
     AgentLocalGUI(root, start_hidden=start_hidden)
+    if not start_hidden:
+        _show_startup_splash(root)
     try:
         root.mainloop()
     finally:
