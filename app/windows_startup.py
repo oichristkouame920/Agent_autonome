@@ -26,7 +26,7 @@ def _vbs_text() -> str:
 
 def ensure_startup_script() -> Path:
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
-    VBS_FILE.write_text(_vbs_text(), encoding="utf-8-sig")
+    VBS_FILE.write_text(_vbs_text(), encoding="ascii")
     return VBS_FILE
 
 
@@ -37,7 +37,14 @@ def is_startup_enabled() -> bool:
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run") as key:
             value, _ = winreg.QueryValueEx(key, VALUE_NAME)
-        return str(value).strip().lower() == _startup_command().strip().lower()
+        enabled = str(value).strip().lower() == _startup_command().strip().lower()
+        if enabled:
+            # Auto-reparation des anciennes versions VBS ecrites avec BOM.
+            try:
+                ensure_startup_script()
+            except Exception:
+                pass
+        return enabled
     except Exception:
         return False
 
@@ -77,6 +84,12 @@ def read_preference() -> bool | None:
 
 
 def apply_default_if_unset(default_enabled: bool = True) -> tuple[bool, str]:
+    # Le script VBS est toujours regenere avec un encodage compatible WSH.
+    # Cela repare aussi automatiquement les anciennes versions UTF-8 BOM.
+    try:
+        ensure_startup_script()
+    except Exception:
+        pass
     pref = read_preference()
     if pref is not None:
         return True, "Préférence de démarrage déjà définie."

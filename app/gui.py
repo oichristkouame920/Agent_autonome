@@ -20,7 +20,7 @@ import threading
 import time
 import tkinter as tk
 from pathlib import Path
-from tkinter import messagebox, ttk
+from tkinter import colorchooser, messagebox, ttk
 from tkinter.scrolledtext import ScrolledText
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -69,7 +69,17 @@ from system_monitor import SystemHealthMonitor, collect_snapshot, is_session_unl
 from windows_startup import is_startup_enabled, set_startup_enabled, status_text as startup_status_text  # noqa: E402
 from single_instance import InstanceGuard, focus_existing_window  # noqa: E402
 from daily_quotes import quote_of_day  # noqa: E402
-from response_style import decorate_response, decorate_suggestion_label  # noqa: E402
+from theme_manager import build_palette, theme_names  # noqa: E402
+from notification_policy import popup_allowed, mark_popup, digest_due, mark_digest, notification_mode_label  # noqa: E402
+from language_profile import summary as language_summary, learned_expressions, clear_unrecognized, remember_expression  # noqa: E402
+from response_style import decorate_response, decorate_suggestion_label, get_presentation_preferences  # noqa: E402
+from user_profile import (  # noqa: E402
+    load_profile, load_preferences, save_profile, save_preferences,
+    load_declared_habits, save_declared_habits, is_onboarding_complete,
+    reset_onboarding, get_display_name,
+)
+from learning_profile import learning_dashboard, restart_initial_learning, set_learning_enabled  # noqa: E402
+from onboarding import OnboardingWizard  # noqa: E402
 from runtime_resilience import (  # noqa: E402
     critical_health_messages,
     format_health_summary,
@@ -125,10 +135,15 @@ COLORS = {
     "quote_bg": "#FFF9EC",
     "conversation": "#FCFDFF",
 }
+try:
+    COLORS.update(build_palette(load_preferences().get("appearance", {})))
+except Exception:
+    pass
 
 NAV_ICONS = {
     "home": "⌂", "briefing": "📰", "assistant": "✦", "pc": "🖥",
-    "alerts": "⚠", "files": "📁", "web": "🌐", "routines": "↻", "settings": "⚙",
+    "alerts": "⚠", "files": "📁", "web": "🌐", "routines": "↻",
+    "habits": "🧠", "configuration": "⚙", "settings": "⋯",
 }
 CARD_META = {
     "CPU": ("⚡", "accent"), "RAM": ("◫", "accent_2"), "Disque libre": ("💾", "teal"),
@@ -168,6 +183,10 @@ def get_runtime_summary() -> tuple[str, str]:
 
     mode = str(backend.get("mode", "auto")).strip().lower() or "auto"
     learning_enabled = bool(learning.get("enabled", False))
+    try:
+        learning_enabled = bool(load_preferences().get("learning", {}).get("enabled", learning_enabled))
+    except Exception:
+        pass
 
     adaptive = False
     idle_seconds = 180
@@ -256,7 +275,9 @@ class AgentLocalGUI:
         ("Fichiers", "files"),
         ("Web", "web"),
         ("Routines", "routines"),
-        ("Paramètres", "settings"),
+        ("Habitudes", "habits"),
+        ("Configuration", "configuration"),
+        ("Paramètres avancés", "settings"),
     )
 
     def __init__(self, root: tk.Tk, start_hidden: bool = False) -> None:
@@ -287,6 +308,9 @@ class AgentLocalGUI:
         self.metric_vars: dict[str, tk.StringVar] = {}
         self.last_started_at = 0.0
         self.notified_alert_codes: set[str] = set()
+        self.profile = load_profile()
+        self.preferences = load_preferences()
+        self.onboarding_window = None
 
         self.command_var = tk.StringVar()
         self.status_var = tk.StringVar(value="Prêt")
@@ -302,6 +326,11 @@ class AgentLocalGUI:
         self.startup_var = tk.StringVar(value="Vérification...")
         self.quote_var = tk.StringVar(value="")
         self.quote_author_var = tk.StringVar(value="")
+        self.profile_name_var = tk.StringVar(value=self.profile.get("display_name") or "Nouvel hôte")
+        self.host_name_var = tk.StringVar(value=self.profile.get("machine_name") or "--")
+        self.learning_progress_var = tk.StringVar(value="Configuration à terminer")
+        self.learning_count_var = tk.StringVar(value="0")
+        self.config_summary_var = tk.StringVar(value="À personnaliser")
         self._refresh_daily_quote()
         self.health_report = None
         self.safe_mode = False
@@ -313,6 +342,7 @@ class AgentLocalGUI:
         self._run_startup_health_check()
         self._refresh_startup_status()
         self._update_dashboard_metrics()
+        self._refresh_personalization_state()
         self.show_page("home")
 
         self.root.after(POLL_INTERVAL_MS, self._poll_worker_result)
@@ -321,8 +351,17 @@ class AgentLocalGUI:
         self.root.after(1600, self._health_monitor_loop)
         self.root.after(2200, self._morning_automation_loop)
         self.root.after(2500, self._scheduler_loop)
+        self.root.after(5000, self._notification_digest_loop)
+        if not self.start_hidden:
+            self.root.after(650, self._maybe_show_onboarding)
+        self.root.after(1800, self._onboarding_visibility_loop)
 
     def _refresh_daily_quote(self) -> None:
+        prefs = get_presentation_preferences()
+        if not bool(prefs.get("daily_quote", True)):
+            self.quote_var.set("")
+            self.quote_author_var.set("")
+            return
         item = quote_of_day()
         self.quote_var.set(f"« {item.get('text', '')} »")
         self.quote_author_var.set(f"— {item.get('author', 'AgentLocal')}")
@@ -361,6 +400,15 @@ class AgentLocalGUI:
         style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=(14, 9))
         style.configure("Secondary.TButton", font=("Segoe UI", 9), padding=(12, 8))
         style.configure("Suggestion.TButton", font=("Segoe UI", 9, "bold"), padding=(10, 8))
+        style.configure(
+            "Learning.Horizontal.TProgressbar",
+            troughcolor=COLORS["soft_neutral"],
+            background=COLORS["teal"],
+            bordercolor=COLORS["border"],
+            lightcolor=COLORS["teal"],
+            darkcolor=COLORS["teal"],
+            thickness=8,
+        )
 
     def _build_interface(self) -> None:
         shell = tk.Frame(self.root, bg=COLORS["bg"])
@@ -390,6 +438,8 @@ class AgentLocalGUI:
         self._build_files_page()
         self._build_web_page()
         self._build_routines_page()
+        self._build_habits_page()
+        self._build_configuration_page()
         self._build_settings_page()
 
         self.root.bind("<Control-k>", self._focus_command)
@@ -401,7 +451,7 @@ class AgentLocalGUI:
         sidebar = tk.Frame(parent, bg=COLORS["sidebar"], width=205)
         sidebar.grid(row=0, column=0, sticky="nsw")
         sidebar.grid_propagate(False)
-        sidebar.grid_rowconfigure(10, weight=1)
+        sidebar.grid_rowconfigure(len(self.NAV_ITEMS) + 1, weight=1)
 
         brand = tk.Frame(sidebar, bg=COLORS["sidebar"])
         brand.grid(row=0, column=0, sticky="ew", padx=18, pady=(22, 24))
@@ -430,7 +480,7 @@ class AgentLocalGUI:
             self.nav_buttons[key] = button
 
         footer = tk.Frame(sidebar, bg=COLORS["sidebar"])
-        footer.grid(row=11, column=0, sticky="sew", padx=18, pady=18)
+        footer.grid(row=len(self.NAV_ITEMS) + 2, column=0, sticky="sew", padx=18, pady=18)
         tk.Label(footer, text="●  100 % local par défaut", bg=COLORS["sidebar"], fg="#8D9AAF", font=("Segoe UI", 8)).pack(anchor="w")
         tk.Label(footer, text="Actions contrôlées", bg=COLORS["sidebar"], fg="#8D9AAF", font=("Segoe UI", 8)).pack(anchor="w", pady=(2, 0))
 
@@ -448,6 +498,10 @@ class AgentLocalGUI:
 
         right = tk.Frame(bar, bg=COLORS["bg"])
         right.grid(row=0, column=1, sticky="e")
+        self.quick_config_button = tk.Button(right, text="⚙  Personnaliser", command=lambda: self.show_page("configuration"), relief="flat", bd=0, bg=COLORS["soft_accent"], fg=COLORS["accent"], activebackground="#DDE8FF", font=("Segoe UI", 8, "bold"), padx=10, pady=6, cursor="hand2", highlightthickness=0)
+        self.quick_config_button.pack(side="right", padx=(8, 0))
+        self.host_chip = tk.Label(right, textvariable=self.profile_name_var, bg=COLORS["soft_lavender"], fg=COLORS["accent_2"], font=("Segoe UI", 8, "bold"), padx=9, pady=6, cursor="hand2")
+        self.host_chip.pack(side="right", padx=(8, 0)); self.host_chip.bind("<Button-1>", lambda _e: self.show_page("configuration"))
         self.health_badge = tk.Label(right, text="Diagnostic...", bg=COLORS["soft_neutral"], fg=COLORS["muted"], font=("Segoe UI", 9, "bold"), padx=10, pady=6)
         self.health_badge.pack(side="right")
         self.alert_badge = tk.Label(right, text="0 alerte", bg=COLORS["soft_success"], fg=COLORS["success"], font=("Segoe UI", 9, "bold"), padx=10, pady=6, cursor="hand2")
@@ -518,13 +572,16 @@ class AgentLocalGUI:
         hero = tk.Frame(page, bg=COLORS["card"], highlightbackground=COLORS["border"], highlightthickness=1)
         hero.grid(row=0, column=0, sticky="ew")
         hero.grid_columnconfigure(0, weight=1)
-        self.home_greeting = tk.Label(hero, text=f"{_greeting()} 👋", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 21, "bold"))
+        self.home_greeting = tk.Label(hero, text=self._personalized_greeting_text(), bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 21, "bold"))
         self.home_greeting.grid(row=0, column=0, sticky="w", padx=22, pady=(18, 2))
         self.home_date = tk.Label(hero, text=_french_date_label(), bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 9))
         self.home_date.grid(row=1, column=0, sticky="w", padx=22)
-        tk.Label(hero, text="Ton espace local est prêt. Voici l'essentiel de ta journée.", bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 10)).grid(row=2, column=0, sticky="w", padx=22, pady=(5, 18))
-        tk.Button(hero, text="✦  Ouvrir l'Assistant", command=lambda: self.show_page("assistant"), relief="flat", bd=0, bg=COLORS["accent"], fg="white", activebackground=COLORS["accent_hover"], activeforeground="white", font=("Segoe UI", 9, "bold"), padx=15, pady=9, cursor="hand2", highlightthickness=0).grid(row=0, column=2, rowspan=3, padx=(8, 22))
-        motif = tk.Canvas(hero, width=110, height=72, bg=COLORS["card"], highlightthickness=0)
+        self.home_personalization_label = tk.Label(hero, textvariable=self.config_summary_var, bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 10))
+        self.home_personalization_label.grid(row=2, column=0, sticky="w", padx=22, pady=(5, 18))
+        hero_actions = tk.Frame(hero, bg=COLORS["card"]); hero_actions.grid(row=0, column=2, rowspan=3, padx=(8, 22))
+        tk.Button(hero_actions, text="✦  Assistant", command=lambda: self.show_page("assistant"), relief="flat", bd=0, bg=COLORS["accent"], fg="white", activebackground=COLORS["accent_hover"], activeforeground="white", font=("Segoe UI", 9, "bold"), padx=15, pady=9, cursor="hand2", highlightthickness=0).pack(fill="x")
+        tk.Button(hero_actions, text="⚙  Personnaliser", command=lambda: self.show_page("configuration"), relief="flat", bd=0, bg=COLORS["soft_accent"], fg=COLORS["accent"], activebackground="#DDE8FF", font=("Segoe UI", 8, "bold"), padx=15, pady=7, cursor="hand2", highlightthickness=0).pack(fill="x", pady=(6, 0))
+        motif = tk.Canvas(hero, width=110, height=72, bg=COLORS["card"], highlightthickness=0); self.home_motif_canvas = motif
         motif.grid(row=0, column=1, rowspan=3, padx=4)
         motif.create_oval(10, 12, 46, 48, fill=COLORS["soft_accent"], outline="")
         motif.create_oval(44, 28, 74, 58, fill=COLORS["soft_lavender"], outline="")
@@ -532,12 +589,13 @@ class AgentLocalGUI:
         motif.create_line(22, 58, 92, 58, fill=COLORS["border"], width=2)
 
         quote = tk.Frame(page, bg=COLORS["quote_bg"], highlightbackground="#F0DFC0", highlightthickness=1)
+        self.home_quote_card = quote
         quote.grid(row=1, column=0, sticky="ew", pady=(12, 0))
         tk.Label(quote, text="💡  Citation du jour", bg=COLORS["quote_bg"], fg=COLORS["gold"], font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=16, pady=(10, 2))
         tk.Label(quote, textvariable=self.quote_var, bg=COLORS["quote_bg"], fg=COLORS["text"], font=("Segoe UI", 10, "italic"), wraplength=820, justify="left").pack(anchor="w", padx=16)
         tk.Label(quote, textvariable=self.quote_author_var, bg=COLORS["quote_bg"], fg=COLORS["muted"], font=("Segoe UI", 8)).pack(anchor="w", padx=16, pady=(2, 10))
 
-        stats = tk.Frame(page, bg=COLORS["bg"])
+        stats = tk.Frame(page, bg=COLORS["bg"]); self.home_stats_frame = stats
         stats.grid(row=2, column=0, sticky="ew", pady=(14, 0))
         for i in range(4):
             stats.grid_columnconfigure(i, weight=1, uniform="stats")
@@ -554,7 +612,7 @@ class AgentLocalGUI:
         for col, card in enumerate(cards):
             card.grid(row=0, column=col, sticky="ew", padx=(0 if col == 0 else 6, 0 if col == 3 else 6))
 
-        day_status = tk.Frame(page, bg=COLORS["bg"])
+        day_status = tk.Frame(page, bg=COLORS["bg"]); self.home_day_status_frame = day_status
         day_status.grid(row=3, column=0, sticky="ew", pady=(12, 0))
         for i in range(3):
             day_status.grid_columnconfigure(i, weight=1, uniform="daystatus")
@@ -567,7 +625,7 @@ class AgentLocalGUI:
         section = self._section_title(page, "Actions rapides", "Les commandes les plus utiles restent locales et contrôlées.")
         section.grid(row=4, column=0, sticky="ew", pady=(20, 10))
 
-        quick = tk.Frame(page, bg=COLORS["bg"])
+        quick = tk.Frame(page, bg=COLORS["bg"]); self.home_quick_frame = quick
         quick.grid(row=5, column=0, sticky="ew")
         quick.grid_columnconfigure(0, weight=1)
         quick.grid_columnconfigure(1, weight=1)
@@ -581,6 +639,7 @@ class AgentLocalGUI:
         self._section_title(page, "Briefing du jour", "Internet est optionnel : si la connexion manque, AgentLocal reste entièrement utilisable en local.").grid(row=0, column=0, sticky="ew")
 
         quote_card = tk.Frame(page, bg=COLORS["quote_bg"], highlightbackground="#F0DFC0", highlightthickness=1)
+        self.briefing_quote_card = quote_card
         quote_card.grid(row=1, column=0, sticky="ew", pady=(14, 0))
         tk.Label(quote_card, text="💡  Citation du jour", bg=COLORS["quote_bg"], fg=COLORS["gold"], font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=16, pady=(10, 2))
         tk.Label(quote_card, textvariable=self.quote_var, bg=COLORS["quote_bg"], fg=COLORS["text"], font=("Segoe UI", 10, "italic"), wraplength=780, justify="left").pack(anchor="w", padx=16, pady=(0, 10))
@@ -855,9 +914,502 @@ class AgentLocalGUI:
         tk.Label(note, text="Sécurité des habitudes", bg=COLORS["soft_warning"], fg="#7A5611", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=15, pady=(12, 3))
         tk.Label(note, text="La routine matinale vérifie automatiquement le PC au premier déverrouillage observé entre 07:00 et 09:30. Les autres planifications horaires restent soumises à confirmation explicite et ne peuvent utiliser que des actions autorisées.", bg=COLORS["soft_warning"], fg="#7A5611", font=("Segoe UI", 9), wraplength=720, justify="left").pack(anchor="w", padx=15, pady=(0, 12))
 
+    # ------------------------------------------------------------------
+    # Personnalisation hôte V12.4
+    # ------------------------------------------------------------------
+    def _personalized_greeting_text(self) -> str:
+        name = str(getattr(self, "profile", {}).get("display_name", "") or "").strip()
+        return f"{_greeting()} {name} 👋" if name else f"{_greeting()} 👋"
+
+    def _refresh_personalization_state(self) -> None:
+        try:
+            self.profile = load_profile()
+            self.preferences = load_preferences()
+            dashboard = learning_dashboard()
+        except Exception as error:
+            log_exception("gui.personalization_refresh", error)
+            return
+
+        display = str(self.profile.get("display_name") or "Nouvel hôte")
+        machine = str(self.profile.get("machine_name") or "--")
+        self.profile_name_var.set(display)
+        self.host_name_var.set(machine)
+        initial = dashboard.get("initial", {})
+        self.learning_progress_var.set(str(initial.get("label", "Apprentissage local")))
+        summary = dashboard.get("summary", {})
+        self.learning_count_var.set(str(int(summary.get("pending", 0) or 0)))
+
+        if not is_onboarding_complete():
+            self.config_summary_var.set("⚙ Configuration initiale à terminer")
+        elif initial.get("status") == "learning":
+            self.config_summary_var.set(f"🧠 AgentLocal apprend vos habitudes · {initial.get('label', '')}")
+        else:
+            self.config_summary_var.set(f"Profil local : {display} · {machine}")
+
+        if hasattr(self, "home_greeting"):
+            self.home_greeting.configure(text=self._personalized_greeting_text())
+
+        self._refresh_daily_quote()
+        home_cards = self.preferences.get("appearance", {}).get("home_cards", {})
+        show_quote = bool(self.preferences.get("assistant", {}).get("daily_quote", True)) and bool(home_cards.get("quote", True))
+        for attr in ("home_quote_card", "briefing_quote_card"):
+            widget = getattr(self, attr, None)
+            if widget is not None:
+                try:
+                    if show_quote:
+                        widget.grid()
+                    else:
+                        widget.grid_remove()
+                except tk.TclError:
+                    pass
+
+
+        try:
+            motif = getattr(self, "home_motif_canvas", None)
+            if motif is not None:
+                (motif.grid if self.preferences.get("appearance", {}).get("patterns", True) else motif.grid_remove)()
+        except tk.TclError:
+            pass
+
+        try:
+            if hasattr(self, "home_stats_frame"):
+                (self.home_stats_frame.grid if home_cards.get("pc", True) else self.home_stats_frame.grid_remove)()
+            if hasattr(self, "home_day_status_frame"):
+                show_day = any(bool(home_cards.get(k, True)) for k in ("routine", "alerts"))
+                (self.home_day_status_frame.grid if show_day else self.home_day_status_frame.grid_remove)()
+        except tk.TclError:
+            pass
+
+        self._refresh_configuration_page()
+        self._refresh_habits_page()
+
+    def _onboarding_visibility_loop(self) -> None:
+        try:
+            visible = bool(self.root.winfo_viewable()) and self.root.state() != "withdrawn"
+            if visible and not is_onboarding_complete():
+                self._maybe_show_onboarding(force=True)
+            self.root.after(1800, self._onboarding_visibility_loop)
+        except tk.TclError:
+            pass
+
+    def _maybe_show_onboarding(self, force: bool = False) -> None:
+        if not force and is_onboarding_complete():
+            return
+        try:
+            if self.onboarding_window is not None and self.onboarding_window.window.winfo_exists():
+                self.onboarding_window.window.lift()
+                return
+        except Exception:
+            self.onboarding_window = None
+        try:
+            self.reveal_main()
+            self.onboarding_window = OnboardingWizard(self.root, COLORS, on_complete=self._on_onboarding_complete)
+        except Exception as error:
+            log_exception("gui.onboarding", error)
+            messagebox.showwarning(APP_TITLE, "Impossible d’ouvrir la configuration initiale.", parent=self.root)
+
+    def _on_onboarding_complete(self) -> None:
+        self.onboarding_window = None
+        self._refresh_personalization_state()
+        self.show_page("home")
+        self.status_var.set("Profil local configuré")
+
+    def _restart_onboarding(self) -> None:
+        if not messagebox.askyesno(APP_TITLE, "Relancer l’assistant de configuration ? Vos réglages actuels resteront modifiables.", parent=self.root):
+            return
+        reset_onboarding()
+        self._maybe_show_onboarding(force=True)
+
+    def _config_card(self, parent: tk.Widget, title: str, icon: str, description_var: tk.StringVar, action_text: str, command, accent: str) -> tk.Frame:
+        card = tk.Frame(parent, bg=COLORS["card"], highlightbackground=COLORS["border"], highlightthickness=1, height=142)
+        card.grid_propagate(False)
+        tk.Frame(card, bg=accent, height=3).pack(fill="x")
+        head = tk.Frame(card, bg=COLORS["card"]); head.pack(fill="x", padx=15, pady=(12, 4))
+        tk.Label(head, text=icon, bg=COLORS["card"], fg=accent, font=("Segoe UI Emoji", 13)).pack(side="left")
+        tk.Label(head, text=title, bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 10, "bold")).pack(side="left", padx=(7, 0))
+        tk.Label(card, textvariable=description_var, bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 8), wraplength=330, justify="left").pack(anchor="w", padx=15, pady=(2, 8))
+        tk.Button(card, text=action_text, command=command, relief="flat", bd=0, bg=COLORS["soft_accent"], fg=COLORS["accent"], activebackground="#DDE8FF", font=("Segoe UI", 8, "bold"), padx=10, pady=5, cursor="hand2", highlightthickness=0).pack(anchor="w", padx=15, pady=(0, 12))
+        return card
+
+    def _build_configuration_page(self) -> None:
+        page = self._new_page("configuration")
+        self._section_title(page, "Personnalisation", "Chaque hôte peut adapter l'apparence, la communication, les habitudes et les notifications sans modifier le code.").grid(row=0, column=0, sticky="ew")
+
+        keys = ("profile", "appearance", "communication", "understanding", "learning", "morning", "briefing", "alerts", "notifications", "privacy")
+        self.config_vars = {key: tk.StringVar(value="Chargement...") for key in keys}
+        grid = tk.Frame(page, bg=COLORS["bg"]); grid.grid(row=1, column=0, sticky="ew", pady=(12, 0))
+        for col in range(3):
+            grid.grid_columnconfigure(col, weight=1, uniform="config")
+        cards = [
+            ("Profil de l’hôte", "👤", self.config_vars["profile"], "Modifier", self._open_profile_editor, COLORS["accent"]),
+            ("Apparence", "🎨", self.config_vars["appearance"], "Personnaliser", self._open_appearance_editor, COLORS["accent_2"]),
+            ("Communication", "💬", self.config_vars["communication"], "Configurer", self._open_behavior_editor, COLORS["teal"]),
+            ("Compréhension", "🧠", self.config_vars["understanding"], "Voir le profil", self._open_understanding_editor, COLORS["gold"]),
+            ("Habitudes", "📚", self.config_vars["learning"], "Configurer", self._open_learning_editor, COLORS["teal"]),
+            ("Automatisations", "☀", self.config_vars["morning"], "Configurer", self._open_morning_editor, COLORS["gold"]),
+            ("Briefing", "📰", self.config_vars["briefing"], "Choisir les thèmes", self._open_briefing_editor, COLORS["accent"]),
+            ("Alertes", "🚨", self.config_vars["alerts"], "Configurer", self._open_alerts_editor, COLORS["warning"]),
+            ("Notifications", "🔔", self.config_vars["notifications"], "Fréquence & calme", self._open_notifications_editor, COLORS["accent_2"]),
+            ("Confidentialité", "🔒", self.config_vars["privacy"], "Voir les garanties", self._show_privacy_dialog, COLORS["success"]),
+        ]
+        for i, item in enumerate(cards):
+            card = self._config_card(grid, *item)
+            col = i % 3; row = i // 3
+            left = 0 if col == 0 else 5; right = 0 if col == 2 else 5
+            card.grid(row=row, column=col, sticky="ew", padx=(left, right), pady=(0, 9))
+
+        actions = tk.Frame(page, bg=COLORS["bg"]); actions.grid(row=2, column=0, sticky="ew", pady=(3, 0))
+        tk.Button(actions, text="🧭 Relancer l’assistant", command=self._restart_onboarding, relief="flat", bd=0, bg=COLORS["soft_neutral"], fg=COLORS["text"], font=("Segoe UI", 8, "bold"), padx=12, pady=7, cursor="hand2").pack(side="left")
+        tk.Button(actions, text="🧠 Voir les habitudes", command=lambda: self.show_page("habits"), relief="flat", bd=0, bg=COLORS["soft_teal"], fg=COLORS["teal"], font=("Segoe UI", 8, "bold"), padx=12, pady=7, cursor="hand2").pack(side="left", padx=(8, 0))
+
+    def _refresh_configuration_page(self) -> None:
+        if not hasattr(self, "config_vars"):
+            return
+        try:
+            profile = load_profile(); prefs = load_preferences(); learn = learning_dashboard(); lang = language_summary()
+            usage = {"work": "Travail", "personal": "Personnel", "mixed": "Mixte"}.get(profile.get("usage_mode"), "Travail")
+            self.config_vars["profile"].set(f"{profile.get('display_name') or 'Nom à renseigner'} · {profile.get('machine_name') or '--'} · {usage}")
+            appearance = prefs["appearance"]
+            theme_label = {"agentlocal":"AgentLocal", "blue_night":"Bleu nuit", "dark":"Dark", "nature":"Nature", "violet":"Violet", "enterprise":"Entreprise", "windows":"Windows", "minimal":"Minimal"}.get(appearance.get("theme"), "AgentLocal")
+            self.config_vars["appearance"].set(f"{theme_label} · {appearance.get('density', 'comfortable')} · accent {appearance.get('accent_color')}")
+            assistant = prefs["assistant"]
+            style = {"natural": "Naturel", "professional": "Professionnel", "concise": "Très concis"}.get(assistant.get("response_style"), "Naturel")
+            emoji = {"none": "sans emoji", "light": "emoji légers", "expressive": "emoji expressifs"}.get(assistant.get("emoji_level"), "emoji légers")
+            detail = {"short":"réponses courtes", "balanced":"réponses équilibrées", "detailed":"réponses détaillées"}.get(assistant.get("response_detail"), "réponses équilibrées")
+            self.config_vars["communication"].set(f"{style} · {emoji} · {detail}")
+            understanding = prefs.get("understanding", {})
+            self.config_vars["understanding"].set(f"Tolérance fautes {understanding.get('typo_tolerance', 2)}/3 · {lang.get('learned',0)} expression(s) · {lang.get('unrecognized',0)} incompréhension(s)")
+            self.config_vars["learning"].set(f"{learn['initial'].get('label')} · {learn['summary'].get('pending', 0)} proposition(s)")
+            morning = prefs["morning"]
+            self.config_vars["morning"].set(f"{'Activée' if morning.get('enabled') else 'Désactivée'} · premier déverrouillage · {morning.get('start_time')} → {morning.get('end_time')}")
+            brief = prefs["briefing"]; selected = sum(1 for v in brief.get("topics", {}).values() if v)
+            self.config_vars["briefing"].set(f"{'Activé' if brief.get('enabled') else 'Désactivé'} · {selected} thème(s)")
+            alert_cfg = prefs.get("alerts", {})
+            self.config_vars["alerts"].set(f"{'Actives' if alert_cfg.get('enabled', True) else 'Désactivées'} · historique local · diagnostic non destructif")
+            notif = prefs.get("notifications", {})
+            quiet = notif.get("quiet_hours", {})
+            quiet_label = f" · calme {quiet.get('start')}–{quiet.get('end')}" if quiet.get("enabled") else ""
+            self.config_vars["notifications"].set(f"{notification_mode_label()} · anti-spam {notif.get('repeat_cooldown_minutes',60)} min{quiet_label}")
+            self.config_vars["privacy"].set("Local · aucune frappe clavier · aucun contenu privé · actions sensibles confirmées")
+        except Exception as error:
+            log_exception("gui.configuration_refresh", error)
+
+    def _build_habits_page(self) -> None:
+        page = self._new_page("habits")
+        self._section_title(page, "Habitudes", "AgentLocal peut apprendre des métadonnées d’actions locales, puis proposer une routine sans jamais l’activer seul.").grid(row=0, column=0, sticky="ew")
+
+        status = tk.Frame(page, bg=COLORS["card"], highlightbackground=COLORS["border"], highlightthickness=1)
+        status.grid(row=1, column=0, sticky="ew", pady=(14, 0)); status.grid_columnconfigure(0, weight=1)
+        tk.Label(status, text="🧠  Phase d’apprentissage", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 11, "bold")).grid(row=0, column=0, sticky="w", padx=16, pady=(14, 3))
+        self.habit_status_var = tk.StringVar(value="Chargement...")
+        tk.Label(status, textvariable=self.habit_status_var, bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 9)).grid(row=1, column=0, sticky="w", padx=16)
+        self.habit_progress_var = tk.DoubleVar(value=0)
+        self.habit_progress = ttk.Progressbar(status, variable=self.habit_progress_var, maximum=100, mode="determinate", style="Learning.Horizontal.TProgressbar")
+        self.habit_progress.grid(row=2, column=0, sticky="ew", padx=16, pady=(10, 14))
+        controls = tk.Frame(status, bg=COLORS["card"]); controls.grid(row=0, column=1, rowspan=3, padx=16)
+        tk.Button(controls, text="Relancer 2 jours", command=self._restart_learning, relief="flat", bd=0, bg=COLORS["soft_accent"], fg=COLORS["accent"], font=("Segoe UI", 8, "bold"), padx=10, pady=6, cursor="hand2").pack(pady=(0, 5))
+        self.learning_toggle_btn = tk.Button(controls, text="Désactiver", command=self._toggle_learning, relief="flat", bd=0, bg=COLORS["soft_neutral"], fg=COLORS["muted"], font=("Segoe UI", 8), padx=10, pady=6, cursor="hand2")
+        self.learning_toggle_btn.pack()
+
+        grid = tk.Frame(page, bg=COLORS["bg"]); grid.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        grid.grid_columnconfigure(0, weight=1, uniform="habits"); grid.grid_columnconfigure(1, weight=1, uniform="habits")
+        declared_card = tk.Frame(grid, bg=COLORS["card"], highlightbackground=COLORS["border"], highlightthickness=1)
+        declared_card.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
+        tk.Label(declared_card, text="📌  Habitudes déclarées", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=15, pady=(13, 4))
+        self.declared_habits_var = tk.StringVar(value="Aucune")
+        tk.Label(declared_card, textvariable=self.declared_habits_var, bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 9), justify="left", wraplength=330).pack(anchor="w", padx=15, pady=(0, 10))
+        tk.Button(declared_card, text="Modifier", command=self._open_declared_habits_editor, relief="flat", bd=0, bg=COLORS["soft_accent"], fg=COLORS["accent"], font=("Segoe UI", 8, "bold"), padx=10, pady=5, cursor="hand2").pack(anchor="w", padx=15, pady=(0, 13))
+
+        observed_card = tk.Frame(grid, bg=COLORS["card"], highlightbackground=COLORS["border"], highlightthickness=1)
+        observed_card.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
+        tk.Label(observed_card, text="👁  Observé localement", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=15, pady=(13, 4))
+        self.observed_habits_var = tk.StringVar(value="Pas encore assez de données")
+        tk.Label(observed_card, textvariable=self.observed_habits_var, bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 9), justify="left", wraplength=330).pack(anchor="w", padx=15, pady=(0, 13))
+
+        proposals = tk.Frame(page, bg=COLORS["card"], highlightbackground=COLORS["border"], highlightthickness=1)
+        proposals.grid(row=3, column=0, sticky="ew", pady=(12, 0)); proposals.grid_columnconfigure(0, weight=1)
+        tk.Label(proposals, text="✨  Propositions à examiner", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 10, "bold")).grid(row=0, column=0, sticky="w", padx=15, pady=(13, 4))
+        self.habit_proposals_var = tk.StringVar(value="Aucune proposition pour le moment.")
+        tk.Label(proposals, textvariable=self.habit_proposals_var, bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 9), justify="left", wraplength=700).grid(row=1, column=0, sticky="w", padx=15, pady=(0, 13))
+        tk.Button(proposals, text="Examiner dans l’Assistant", command=lambda: self.run_shortcut("liste mes habitudes", "Mes habitudes détectées"), relief="flat", bd=0, bg=COLORS["soft_teal"], fg=COLORS["teal"], font=("Segoe UI", 8, "bold"), padx=10, pady=6, cursor="hand2").grid(row=0, column=1, rowspan=2, padx=15)
+
+    def _refresh_habits_page(self) -> None:
+        if not hasattr(self, "habit_status_var"):
+            return
+        try:
+            data = learning_dashboard(); initial = data["initial"]; prefs = load_preferences()
+            self.habit_status_var.set(initial.get("label", "Apprentissage local"))
+            self.habit_progress_var.set(float(initial.get("progress", 0) or 0))
+            enabled = bool(prefs["learning"].get("enabled", True))
+            self.learning_toggle_btn.configure(text="Désactiver" if enabled else "Activer")
+            declared = data.get("declared", {}); apps = declared.get("frequent_apps", [])
+            declared_text = f"Début habituel : {declared.get('typical_start_time', '--')}\nOutils fréquents : {', '.join(apps) if apps else 'à découvrir'}"
+            self.declared_habits_var.set(declared_text)
+            observed = data.get("observed_targets", [])
+            self.observed_habits_var.set("\n".join(f"• {row['target']} · {row['count']} fois" for row in observed[:6]) if observed else "Pas encore assez de données d’action.")
+            pending = data.get("pending", [])
+            if pending:
+                self.habit_proposals_var.set("\n".join(f"• {row.get('title', 'Habitude')} · vers {row.get('typical_time', '--')}" for row in pending[:4]))
+            else:
+                self.habit_proposals_var.set("Aucune proposition automatique pour le moment. L’apprentissage n’active jamais une routine seul.")
+        except Exception as error:
+            log_exception("gui.habits_refresh", error)
+
+    def _restart_learning(self) -> None:
+        restart_initial_learning(); self._refresh_personalization_state(); self.status_var.set("Phase d’apprentissage initial relancée pour 2 jours")
+
+    def _toggle_learning(self) -> None:
+        enabled = bool(load_preferences().get("learning", {}).get("enabled", True))
+        set_learning_enabled(not enabled); self._refresh_personalization_state(); self.status_var.set("Apprentissage activé" if not enabled else "Apprentissage désactivé")
+
+    def _dialog_base(self, title: str, geometry: str = "560x520") -> tuple[tk.Toplevel, tk.Frame]:
+        popup = tk.Toplevel(self.root); popup.title(title); popup.geometry(geometry); popup.resizable(False, False); popup.transient(self.root); popup.grab_set(); popup.configure(bg=COLORS["bg"])
+        body = tk.Frame(popup, bg=COLORS["card"], highlightbackground=COLORS["border"], highlightthickness=1); body.pack(fill="both", expand=True, padx=18, pady=18)
+        return popup, body
+
+    def _open_profile_editor(self) -> None:
+        profile = load_profile(); popup, body = self._dialog_base("Profil de l’hôte", "540x390")
+        name = tk.StringVar(value=profile.get("display_name", "")); machine = tk.StringVar(value=profile.get("machine_name", "")); usage = tk.StringVar(value=profile.get("usage_mode", "work"))
+        tk.Label(body, text="👤 Profil de l’hôte", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 16, "bold")).pack(anchor="w", padx=18, pady=(18, 4))
+        tk.Label(body, text="Ces informations restent sur cette machine.", bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 9)).pack(anchor="w", padx=18, pady=(0, 14))
+        for label, var in (("Nom affiché", name), ("Nom de la machine", machine)):
+            tk.Label(body, text=label, bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=18, pady=(7, 4)); tk.Entry(body, textvariable=var, relief="flat", bg=COLORS["soft_neutral"], font=("Segoe UI", 10)).pack(fill="x", padx=18, ipady=7)
+        row = tk.Frame(body, bg=COLORS["card"]); row.pack(fill="x", padx=18, pady=(14, 10))
+        for value, label in (("work", "Travail"), ("personal", "Personnel"), ("mixed", "Mixte")):
+            tk.Radiobutton(row, text=label, variable=usage, value=value, bg=COLORS["card"], activebackground=COLORS["card"], selectcolor="white", font=("Segoe UI", 9)).pack(side="left", padx=(0, 12))
+        def save():
+            profile.update({"display_name": name.get().strip(), "machine_name": machine.get().strip(), "usage_mode": usage.get(), "configured": True}); save_profile(profile); popup.destroy(); self._refresh_personalization_state()
+        tk.Button(body, text="Enregistrer", command=save, relief="flat", bd=0, bg=COLORS["accent"], fg="white", font=("Segoe UI", 9, "bold"), padx=14, pady=8, cursor="hand2").pack(anchor="e", padx=18, pady=(6, 18))
+
+    def _rebuild_ui_after_theme_change(self) -> None:
+        """Reconstruit uniquement l'interface Tkinter après un changement de thème."""
+        try:
+            COLORS.clear(); COLORS.update(build_palette(load_preferences().get("appearance", {})))
+            self.root.configure(bg=COLORS["bg"])
+            for child in list(self.root.winfo_children()):
+                try: child.destroy()
+                except tk.TclError: pass
+            self.nav_buttons = {}; self.pages = {}; self.metric_vars = {}
+            self._configure_styles(); self._build_interface()
+            self._refresh_daily_quote(); self._refresh_runtime_summary(); self._refresh_startup_status()
+            self._update_dashboard_metrics(); self._refresh_personalization_state(); self.show_page("configuration")
+            self.status_var.set("Apparence appliquée")
+        except Exception as error:
+            log_exception("gui.theme_rebuild", error)
+            messagebox.showwarning(APP_TITLE, "Le thème a été enregistré. Il sera pleinement appliqué au prochain lancement.", parent=self.root)
+
+    def _open_appearance_editor(self) -> None:
+        prefs = load_preferences(); block = prefs["appearance"]
+        popup, body = self._dialog_base("Apparence", "720x650")
+        theme = tk.StringVar(value=block.get("theme", "agentlocal")); density = tk.StringVar(value=block.get("density", "comfortable"))
+        accent = tk.StringVar(value=block.get("accent_color", "#356AE6")); sidebar = tk.StringVar(value=block.get("sidebar_color", "#101A2E")); card = tk.StringVar(value=block.get("card_color", "#FFFFFF"))
+        patterns = tk.BooleanVar(value=block.get("patterns", True)); animations = tk.BooleanVar(value=block.get("animations", True))
+        home = block.get("home_cards", {}); home_vars = {k: tk.BooleanVar(value=bool(home.get(k, False))) for k in ("pc","briefing","routine","alerts","quote","habits","network","processes")}
+        tk.Label(body, text="🎨 Apparence", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 17, "bold")).pack(anchor="w", padx=18, pady=(18, 4))
+        tk.Label(body, text="Les couleurs et cartes sont propres à cet hôte. L'application du thème est immédiate.", bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 9)).pack(anchor="w", padx=18, pady=(0, 12))
+        row = tk.Frame(body, bg=COLORS["card"]); row.pack(fill="x", padx=18)
+        tk.Label(row, text="Thème", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 9, "bold")).grid(row=0,column=0,sticky="w")
+        combo = ttk.Combobox(row, textvariable=theme, values=list(theme_names()), state="readonly", width=20); combo.grid(row=1,column=0,sticky="w",pady=(4,10))
+        tk.Label(row, text="Densité", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 9, "bold")).grid(row=0,column=1,sticky="w",padx=(28,0))
+        ttk.Combobox(row, textvariable=density, values=["comfortable","compact"], state="readonly", width=18).grid(row=1,column=1,sticky="w",padx=(28,0),pady=(4,10))
+        colors = tk.Frame(body, bg=COLORS["card"]); colors.pack(fill="x", padx=18, pady=(4,6))
+        def chooser(var):
+            selected = colorchooser.askcolor(color=var.get(), parent=popup)
+            if selected and selected[1]: var.set(selected[1].upper())
+        for i,(label,var) in enumerate((("Accent",accent),("Barre latérale",sidebar),("Cartes",card))):
+            box=tk.Frame(colors,bg=COLORS["card"]); box.grid(row=0,column=i,sticky="w",padx=(0 if i==0 else 16,0))
+            tk.Label(box,text=label,bg=COLORS["card"],fg=COLORS["muted"],font=("Segoe UI",8,"bold")).pack(anchor="w")
+            tk.Button(box,textvariable=var,command=lambda v=var:chooser(v),relief="flat",bd=0,bg=COLORS["soft_neutral"],fg=COLORS["text"],font=("Consolas",9),padx=10,pady=6,cursor="hand2").pack(anchor="w",pady=(4,0))
+        toggles=tk.Frame(body,bg=COLORS["card"]); toggles.pack(fill="x",padx=18,pady=(8,6))
+        tk.Checkbutton(toggles,text="Motifs décoratifs légers",variable=patterns,bg=COLORS["card"],activebackground=COLORS["card"],selectcolor="white",font=("Segoe UI",9)).pack(side="left")
+        tk.Checkbutton(toggles,text="Animations légères",variable=animations,bg=COLORS["card"],activebackground=COLORS["card"],selectcolor="white",font=("Segoe UI",9)).pack(side="left",padx=(18,0))
+        tk.Label(body,text="Cartes visibles sur l’accueil",bg=COLORS["card"],fg=COLORS["text"],font=("Segoe UI",9,"bold")).pack(anchor="w",padx=18,pady=(10,4))
+        grid=tk.Frame(body,bg=COLORS["card"]); grid.pack(fill="x",padx=18)
+        labels={"pc":"État du PC","briefing":"Briefing","routine":"Routine","alerts":"Alertes","quote":"Citation","habits":"Habitudes","network":"Réseau","processes":"Processus"}
+        for i,key in enumerate(home_vars):
+            tk.Checkbutton(grid,text=labels[key],variable=home_vars[key],bg=COLORS["card"],activebackground=COLORS["card"],selectcolor="white",font=("Segoe UI",9)).grid(row=i//4,column=i%4,sticky="w",padx=(0,16),pady=3)
+        preview=tk.Frame(body,bg=COLORS["soft_neutral"],highlightbackground=COLORS["border"],highlightthickness=1); preview.pack(fill="x",padx=18,pady=(14,0))
+        tk.Label(preview,text="Aperçu",bg=COLORS["soft_neutral"],fg=COLORS["muted"],font=("Segoe UI",8,"bold")).pack(anchor="w",padx=10,pady=(8,2))
+        tk.Label(preview,text="AgentLocal  •  mini-cartes  •  configuration personnalisée",bg=COLORS["soft_neutral"],fg=COLORS["text"],font=("Segoe UI",10,"bold")).pack(anchor="w",padx=10,pady=(0,8))
+        def save():
+            block.update({"theme":theme.get(),"density":density.get(),"accent_color":accent.get(),"sidebar_color":sidebar.get(),"card_color":card.get(),"patterns":patterns.get(),"animations":animations.get(),"home_cards":{k:v.get() for k,v in home_vars.items()}})
+            save_preferences(prefs); popup.destroy(); self._rebuild_ui_after_theme_change()
+        tk.Button(body,text="Appliquer maintenant",command=save,relief="flat",bd=0,bg=COLORS["accent"],fg="white",font=("Segoe UI",9,"bold"),padx=15,pady=8,cursor="hand2").pack(anchor="e",padx=18,pady=(16,18))
+
+    def _open_understanding_editor(self) -> None:
+        prefs=load_preferences(); block=prefs["understanding"]; popup,body=self._dialog_base("Compréhension", "620x535")
+        typo=tk.IntVar(value=int(block.get("typo_tolerance",2))); turns=tk.IntVar(value=int(block.get("context_turns",4)))
+        store=tk.BooleanVar(value=block.get("store_unrecognized",True)); learn=tk.BooleanVar(value=block.get("learn_confirmed_expressions",True)); stats=language_summary()
+        tk.Label(body,text="🧠 Compréhension individualisée",bg=COLORS["card"],fg=COLORS["text"],font=("Segoe UI",16,"bold")).pack(anchor="w",padx=18,pady=(18,5))
+        tk.Label(body,text=f"Expressions confirmées : {stats.get('learned',0)}   •   demandes non comprises : {stats.get('unrecognized',0)}",bg=COLORS["soft_teal"],fg=COLORS["teal"],font=("Segoe UI",9,"bold"),padx=10,pady=8).pack(fill="x",padx=18,pady=(4,12))
+        row=tk.Frame(body,bg=COLORS["card"]); row.pack(fill="x",padx=18)
+        tk.Label(row,text="Tolérance aux fautes (0 à 3)",bg=COLORS["card"],fg=COLORS["muted"],font=("Segoe UI",8,"bold")).grid(row=0,column=0,sticky="w")
+        tk.Spinbox(row,from_=0,to=3,textvariable=typo,width=6,relief="flat",bg=COLORS["soft_neutral"]).grid(row=1,column=0,sticky="w",pady=(4,10))
+        tk.Label(row,text="Contexte conversationnel (tours)",bg=COLORS["card"],fg=COLORS["muted"],font=("Segoe UI",8,"bold")).grid(row=0,column=1,sticky="w",padx=(26,0))
+        tk.Spinbox(row,from_=1,to=8,textvariable=turns,width=6,relief="flat",bg=COLORS["soft_neutral"]).grid(row=1,column=1,sticky="w",padx=(26,0),pady=(4,10))
+        tk.Checkbutton(body,text="Conserver localement les demandes non comprises",variable=store,bg=COLORS["card"],activebackground=COLORS["card"],selectcolor="white",font=("Segoe UI",9)).pack(anchor="w",padx=18,pady=3)
+        tk.Checkbutton(body,text="Apprendre les expressions uniquement après confirmation",variable=learn,bg=COLORS["card"],activebackground=COLORS["card"],selectcolor="white",font=("Segoe UI",9)).pack(anchor="w",padx=18,pady=3)
+        tk.Label(body,text="Expressions apprises",bg=COLORS["card"],fg=COLORS["text"],font=("Segoe UI",9,"bold")).pack(anchor="w",padx=18,pady=(14,4))
+        rows=learned_expressions(6); text="\n".join(f"• {phrase} → {intent}" for phrase,intent in rows) if rows else "Aucune expression personnelle confirmée pour le moment."
+        tk.Label(body,text=text,bg=COLORS["soft_neutral"],fg=COLORS["muted"],font=("Segoe UI",8),justify="left",wraplength=540,padx=10,pady=8).pack(fill="x",padx=18)
+        def clear_failures(): clear_unrecognized(); messagebox.showinfo(APP_TITLE,"Historique des incompréhensions effacé.",parent=popup)
+        action_row = tk.Frame(body, bg=COLORS["card"]); action_row.pack(fill="x", padx=18, pady=(10,0))
+        tk.Button(action_row,text="Effacer les incompréhensions",command=clear_failures,relief="flat",bd=0,bg=COLORS["soft_neutral"],fg=COLORS["muted"],font=("Segoe UI",8),padx=10,pady=6,cursor="hand2").pack(side="left")
+        def add_expression():
+            win = tk.Toplevel(popup); win.title("Ajouter une expression"); win.geometry("500x310"); win.resizable(False,False); win.transient(popup); win.grab_set(); win.configure(bg=COLORS["bg"])
+            box=tk.Frame(win,bg=COLORS["card"],highlightbackground=COLORS["border"],highlightthickness=1); box.pack(fill="both",expand=True,padx=16,pady=16)
+            phrase=tk.StringVar(); command=tk.StringVar()
+            tk.Label(box,text="🧠 Expression personnelle",bg=COLORS["card"],fg=COLORS["text"],font=("Segoe UI",14,"bold")).pack(anchor="w",padx=14,pady=(14,8))
+            tk.Label(box,text="Ce que tu dis",bg=COLORS["card"],fg=COLORS["muted"],font=("Segoe UI",8,"bold")).pack(anchor="w",padx=14)
+            tk.Entry(box,textvariable=phrase,relief="flat",bg=COLORS["soft_neutral"],font=("Segoe UI",10)).pack(fill="x",padx=14,pady=(4,10),ipady=6)
+            tk.Label(box,text="Commande AgentLocal correspondante",bg=COLORS["card"],fg=COLORS["muted"],font=("Segoe UI",8,"bold")).pack(anchor="w",padx=14)
+            tk.Entry(box,textvariable=command,relief="flat",bg=COLORS["soft_neutral"],font=("Segoe UI",10)).pack(fill="x",padx=14,pady=(4,8),ipady=6)
+            tk.Label(box,text="Exemple : “fais le point” → “quel est l'état de mon PC”. La commande repassera toujours par les contrôles de sécurité.",bg=COLORS["card"],fg=COLORS["muted"],font=("Segoe UI",8),wraplength=440,justify="left").pack(anchor="w",padx=14)
+            def commit():
+                if not remember_expression(phrase.get(), command.get()):
+                    messagebox.showwarning(APP_TITLE,"Renseigne une expression et une commande.",parent=win); return
+                win.destroy(); popup.destroy(); self._open_understanding_editor()
+            tk.Button(box,text="Enregistrer",command=commit,relief="flat",bd=0,bg=COLORS["accent"],fg="white",font=("Segoe UI",9,"bold"),padx=12,pady=7,cursor="hand2").pack(anchor="e",padx=14,pady=(12,14))
+        tk.Button(action_row,text="+ Ajouter une expression",command=add_expression,relief="flat",bd=0,bg=COLORS["soft_teal"],fg=COLORS["teal"],font=("Segoe UI",8,"bold"),padx=10,pady=6,cursor="hand2").pack(side="left",padx=(8,0))
+        def save():
+            block.update({"typo_tolerance":typo.get(),"context_turns":turns.get(),"store_unrecognized":store.get(),"learn_confirmed_expressions":learn.get()}); save_preferences(prefs); popup.destroy(); self._refresh_personalization_state()
+        tk.Button(body,text="Appliquer",command=save,relief="flat",bd=0,bg=COLORS["accent"],fg="white",font=("Segoe UI",9,"bold"),padx=14,pady=8,cursor="hand2").pack(anchor="e",padx=18,pady=(12,18))
+
+    def _open_alerts_editor(self) -> None:
+        prefs=load_preferences(); block=prefs["alerts"]; popup,body=self._dialog_base("Alertes", "540x360")
+        enabled=tk.BooleanVar(value=block.get("enabled",True)); background=tk.BooleanVar(value=block.get("background_notifications",True))
+        tk.Label(body,text="🚨 Alertes",bg=COLORS["card"],fg=COLORS["text"],font=("Segoe UI",16,"bold")).pack(anchor="w",padx=18,pady=(18,7))
+        tk.Label(body,text="Le diagnostic reste non destructif : une alerte ne ferme jamais une application et ne supprime jamais un fichier.",bg=COLORS["card"],fg=COLORS["muted"],font=("Segoe UI",9),wraplength=480,justify="left").pack(anchor="w",padx=18,pady=(0,12))
+        tk.Checkbutton(body,text="Activer le suivi des alertes",variable=enabled,bg=COLORS["card"],activebackground=COLORS["card"],selectcolor="white",font=("Segoe UI",9,"bold")).pack(anchor="w",padx=18,pady=4)
+        tk.Checkbutton(body,text="Autoriser les fenêtres de notification",variable=background,bg=COLORS["card"],activebackground=COLORS["card"],selectcolor="white",font=("Segoe UI",9)).pack(anchor="w",padx=18,pady=4)
+        tk.Label(body,text="La fréquence et les heures calmes se règlent dans Notifications.",bg=COLORS["soft_warning"],fg=COLORS["warning"],font=("Segoe UI",8,"bold"),padx=10,pady=8).pack(fill="x",padx=18,pady=(12,0))
+        def save(): block.update({"enabled":enabled.get(),"background_notifications":background.get()}); save_preferences(prefs); popup.destroy(); self._refresh_personalization_state()
+        tk.Button(body,text="Appliquer",command=save,relief="flat",bd=0,bg=COLORS["accent"],fg="white",font=("Segoe UI",9,"bold"),padx=14,pady=8,cursor="hand2").pack(anchor="e",padx=18,pady=(18,18))
+
+    def _open_notifications_editor(self) -> None:
+        prefs=load_preferences(); block=prefs["notifications"]; popup,body=self._dialog_base("Notifications", "650x650")
+        mode=tk.StringVar(value=block.get("mode","balanced")); summary=tk.IntVar(value=int(block.get("summary_minutes",60))); critical=tk.BooleanVar(value=block.get("critical_immediate",True)); cooldown=tk.IntVar(value=int(block.get("repeat_cooldown_minutes",60)))
+        quiet=block.get("quiet_hours",{}); quiet_enabled=tk.BooleanVar(value=quiet.get("enabled",False)); quiet_start=tk.StringVar(value=quiet.get("start","18:30")); quiet_end=tk.StringVar(value=quiet.get("end","07:00")); quiet_critical=tk.BooleanVar(value=quiet.get("allow_critical",True))
+        categories=block.get("categories",{}); cat_vars={k:tk.BooleanVar(value=bool(categories.get(k,True))) for k in ("system","briefing","routine","habits","updates")}
+        tk.Label(body,text="🔔 Notifications",bg=COLORS["card"],fg=COLORS["text"],font=("Segoe UI",16,"bold")).pack(anchor="w",padx=18,pady=(18,4))
+        tk.Label(body,text="Choisissez quand AgentLocal doit vous interrompre. L’historique des alertes reste disponible même en mode silencieux.",bg=COLORS["card"],fg=COLORS["muted"],font=("Segoe UI",9),wraplength=570,justify="left").pack(anchor="w",padx=18,pady=(0,10))
+        tk.Label(body,text="Mode",bg=COLORS["card"],fg=COLORS["text"],font=("Segoe UI",9,"bold")).pack(anchor="w",padx=18)
+        modes=(("realtime","Temps réel"),("balanced","Équilibré"),("discreet","Discret"),("periodic","Résumé périodique"),("silent","Silencieux"))
+        mode_row=tk.Frame(body,bg=COLORS["card"]); mode_row.pack(fill="x",padx=18,pady=(3,8))
+        for value,label in modes: tk.Radiobutton(mode_row,text=label,variable=mode,value=value,bg=COLORS["card"],activebackground=COLORS["card"],selectcolor="white",font=("Segoe UI",8)).pack(side="left",padx=(0,10))
+        freq=tk.Frame(body,bg=COLORS["card"]); freq.pack(fill="x",padx=18,pady=(4,8))
+        tk.Label(freq,text="Résumé périodique",bg=COLORS["card"],fg=COLORS["muted"],font=("Segoe UI",8,"bold")).grid(row=0,column=0,sticky="w")
+        ttk.Combobox(freq,textvariable=summary,values=[30,60,120,240],state="readonly",width=8).grid(row=1,column=0,sticky="w",pady=(3,0))
+        tk.Label(freq,text="minutes",bg=COLORS["card"],fg=COLORS["muted"],font=("Segoe UI",8)).grid(row=1,column=1,sticky="w",padx=(6,25))
+        tk.Label(freq,text="Rappel même problème",bg=COLORS["card"],fg=COLORS["muted"],font=("Segoe UI",8,"bold")).grid(row=0,column=2,sticky="w")
+        tk.Spinbox(freq,from_=5,to=1440,textvariable=cooldown,width=7,relief="flat",bg=COLORS["soft_neutral"]).grid(row=1,column=2,sticky="w",pady=(3,0))
+        tk.Label(freq,text="minutes",bg=COLORS["card"],fg=COLORS["muted"],font=("Segoe UI",8)).grid(row=1,column=3,sticky="w",padx=(6,0))
+        tk.Checkbutton(body,text="Toujours notifier immédiatement une alerte critique",variable=critical,bg=COLORS["card"],activebackground=COLORS["card"],selectcolor="white",font=("Segoe UI",9,"bold")).pack(anchor="w",padx=18,pady=(4,8))
+        quiet_box=tk.Frame(body,bg=COLORS["soft_neutral"],highlightbackground=COLORS["border"],highlightthickness=1); quiet_box.pack(fill="x",padx=18,pady=(4,10))
+        tk.Checkbutton(quiet_box,text="🌙 Heures calmes",variable=quiet_enabled,bg=COLORS["soft_neutral"],activebackground=COLORS["soft_neutral"],selectcolor="white",font=("Segoe UI",9,"bold")).grid(row=0,column=0,columnspan=4,sticky="w",padx=10,pady=(8,4))
+        tk.Label(quiet_box,text="De",bg=COLORS["soft_neutral"],fg=COLORS["muted"],font=("Segoe UI",8)).grid(row=1,column=0,sticky="w",padx=10); tk.Entry(quiet_box,textvariable=quiet_start,width=8,relief="flat",bg=COLORS["card"]).grid(row=1,column=1,sticky="w")
+        tk.Label(quiet_box,text="à",bg=COLORS["soft_neutral"],fg=COLORS["muted"],font=("Segoe UI",8)).grid(row=1,column=2,sticky="w",padx=(12,4)); tk.Entry(quiet_box,textvariable=quiet_end,width=8,relief="flat",bg=COLORS["card"]).grid(row=1,column=3,sticky="w")
+        tk.Checkbutton(quiet_box,text="Autoriser les critiques pendant les heures calmes",variable=quiet_critical,bg=COLORS["soft_neutral"],activebackground=COLORS["soft_neutral"],selectcolor="white",font=("Segoe UI",8)).grid(row=2,column=0,columnspan=4,sticky="w",padx=10,pady=(6,8))
+        tk.Label(body,text="Types de notifications",bg=COLORS["card"],fg=COLORS["text"],font=("Segoe UI",9,"bold")).pack(anchor="w",padx=18,pady=(3,4))
+        cat_grid=tk.Frame(body,bg=COLORS["card"]); cat_grid.pack(fill="x",padx=18)
+        labels={"system":"Système / PC","briefing":"Briefing","routine":"Routines","habits":"Habitudes","updates":"Mises à jour"}
+        for i,key in enumerate(cat_vars): tk.Checkbutton(cat_grid,text=labels[key],variable=cat_vars[key],bg=COLORS["card"],activebackground=COLORS["card"],selectcolor="white",font=("Segoe UI",9)).grid(row=i//3,column=i%3,sticky="w",padx=(0,18),pady=3)
+        def save():
+            block.update({"mode":mode.get(),"summary_minutes":summary.get(),"critical_immediate":critical.get(),"repeat_cooldown_minutes":cooldown.get(),"quiet_hours":{"enabled":quiet_enabled.get(),"start":quiet_start.get(),"end":quiet_end.get(),"allow_critical":quiet_critical.get()},"categories":{k:v.get() for k,v in cat_vars.items()}}); save_preferences(prefs); popup.destroy(); self._refresh_personalization_state(); self.status_var.set("Préférences de notifications appliquées")
+        tk.Button(body,text="Appliquer",command=save,relief="flat",bd=0,bg=COLORS["accent"],fg="white",font=("Segoe UI",9,"bold"),padx=14,pady=8,cursor="hand2").pack(anchor="e",padx=18,pady=(14,18))
+
+    def _open_behavior_editor(self) -> None:
+        prefs = load_preferences(); block = prefs["assistant"]; popup, body = self._dialog_base("Comportement de l’agent", "560x475")
+        style = tk.StringVar(value=block.get("response_style", "natural")); emoji = tk.StringVar(value=block.get("emoji_level", "light")); detail = tk.StringVar(value=block.get("response_detail", "balanced")); quote = tk.BooleanVar(value=block.get("daily_quote", True)); suggestions = tk.BooleanVar(value=block.get("smart_suggestions", True))
+        tk.Label(body, text="🤖 Comportement de l’agent", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 16, "bold")).pack(anchor="w", padx=18, pady=(18, 12))
+        tk.Label(body, text="Ton des réponses", bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 8, "bold")).pack(anchor="w", padx=18)
+        for value, label in (("natural", "Naturel"), ("professional", "Professionnel"), ("concise", "Très concis")):
+            tk.Radiobutton(body, text=label, variable=style, value=value, bg=COLORS["card"], activebackground=COLORS["card"], selectcolor="white", font=("Segoe UI", 9)).pack(anchor="w", padx=18)
+        tk.Label(body, text="Niveau d’emoji", bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 8, "bold")).pack(anchor="w", padx=18, pady=(12, 0))
+        for value, label in (("none", "Aucun"), ("light", "Léger"), ("expressive", "Plus expressif")):
+            tk.Radiobutton(body, text=label, variable=emoji, value=value, bg=COLORS["card"], activebackground=COLORS["card"], selectcolor="white", font=("Segoe UI", 9)).pack(anchor="w", padx=18)
+        tk.Label(body, text="Niveau de détail", bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 8, "bold")).pack(anchor="w", padx=18, pady=(12, 0))
+        detail_row = tk.Frame(body, bg=COLORS["card"]); detail_row.pack(anchor="w", padx=18)
+        for value, label in (("short", "Court"), ("balanced", "Équilibré"), ("detailed", "Détaillé")):
+            tk.Radiobutton(detail_row, text=label, variable=detail, value=value, bg=COLORS["card"], activebackground=COLORS["card"], selectcolor="white", font=("Segoe UI", 9)).pack(side="left", padx=(0, 12))
+        tk.Checkbutton(body, text="Citation quotidienne", variable=quote, bg=COLORS["card"], activebackground=COLORS["card"], selectcolor="white", font=("Segoe UI", 9)).pack(anchor="w", padx=18, pady=(12, 0))
+        tk.Checkbutton(body, text="Suggestions intelligentes", variable=suggestions, bg=COLORS["card"], activebackground=COLORS["card"], selectcolor="white", font=("Segoe UI", 9)).pack(anchor="w", padx=18)
+        def save():
+            block.update({"response_style": style.get(), "emoji_level": emoji.get(), "response_detail": detail.get(), "daily_quote": quote.get(), "smart_suggestions": suggestions.get()}); save_preferences(prefs); popup.destroy(); self._refresh_personalization_state(); self._refresh_suggestion_buttons()
+        tk.Button(body, text="Appliquer", command=save, relief="flat", bd=0, bg=COLORS["accent"], fg="white", font=("Segoe UI", 9, "bold"), padx=14, pady=8, cursor="hand2").pack(anchor="e", padx=18, pady=(14, 18))
+
+    def _open_learning_editor(self) -> None:
+        prefs = load_preferences(); block = prefs["learning"]; popup, body = self._dialog_base("Apprentissage", "560x440")
+        enabled = tk.BooleanVar(value=block.get("enabled", True)); mode = tk.StringVar(value=block.get("onboarding_mode", "hybrid")); continuous = tk.BooleanVar(value=block.get("continuous_learning", True))
+        tk.Label(body, text="🧠 Apprentissage local", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 16, "bold")).pack(anchor="w", padx=18, pady=(18, 5))
+        tk.Label(body, text="AgentLocal observe uniquement les types d’actions et leurs cibles déjà exécutées via lui.", bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 9), wraplength=500, justify="left").pack(anchor="w", padx=18, pady=(0, 12))
+        tk.Checkbutton(body, text="Activer l’apprentissage", variable=enabled, bg=COLORS["card"], activebackground=COLORS["card"], selectcolor="white", font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=18)
+        for value, label in (("questions", "Questions uniquement"), ("observe", "Observation locale"), ("hybrid", "Questions + observation")):
+            tk.Radiobutton(body, text=label, variable=mode, value=value, bg=COLORS["card"], activebackground=COLORS["card"], selectcolor="white", font=("Segoe UI", 9)).pack(anchor="w", padx=18, pady=2)
+        tk.Checkbutton(body, text="Continuer à apprendre après la phase initiale de 2 jours", variable=continuous, bg=COLORS["card"], activebackground=COLORS["card"], selectcolor="white", font=("Segoe UI", 9)).pack(anchor="w", padx=18, pady=(10, 0))
+        def save():
+            block.update({"enabled": enabled.get(), "onboarding_mode": mode.get(), "continuous_learning": continuous.get(), "initial_days": 2}); save_preferences(prefs); popup.destroy(); self._refresh_personalization_state()
+        tk.Button(body, text="Appliquer", command=save, relief="flat", bd=0, bg=COLORS["accent"], fg="white", font=("Segoe UI", 9, "bold"), padx=14, pady=8, cursor="hand2").pack(anchor="e", padx=18, pady=(18, 18))
+
+    def _open_morning_editor(self) -> None:
+        prefs = load_preferences(); block = prefs["morning"]; popup, body = self._dialog_base("Routine matinale", "540x360")
+        enabled = tk.BooleanVar(value=block.get("enabled", True)); start = tk.StringVar(value=block.get("start_time", "07:00")); end = tk.StringVar(value=block.get("end_time", "09:30"))
+        tk.Label(body, text="☀ Routine matinale", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 16, "bold")).pack(anchor="w", padx=18, pady=(18, 6))
+        tk.Checkbutton(body, text="Activer au premier déverrouillage", variable=enabled, bg=COLORS["card"], activebackground=COLORS["card"], selectcolor="white", font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=18, pady=(0, 12))
+        row = tk.Frame(body, bg=COLORS["card"]); row.pack(fill="x", padx=18)
+        tk.Label(row, text="Début", bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 8, "bold")).grid(row=0, column=0, sticky="w"); tk.Entry(row, textvariable=start, width=8, relief="flat", bg=COLORS["soft_neutral"], font=("Segoe UI", 10)).grid(row=1, column=0, padx=(0, 20), ipady=6)
+        tk.Label(row, text="Fin", bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 8, "bold")).grid(row=0, column=1, sticky="w"); tk.Entry(row, textvariable=end, width=8, relief="flat", bg=COLORS["soft_neutral"], font=("Segoe UI", 10)).grid(row=1, column=1, ipady=6)
+        tk.Label(body, text="Format HH:MM. Le déclencheur reste obligatoirement le premier déverrouillage observé.", bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 8), wraplength=480, justify="left").pack(anchor="w", padx=18, pady=(12, 0))
+        def save():
+            block.update({"enabled": enabled.get(), "start_time": start.get().strip(), "end_time": end.get().strip()}); save_preferences(prefs); popup.destroy(); self._refresh_personalization_state()
+        tk.Button(body, text="Appliquer", command=save, relief="flat", bd=0, bg=COLORS["accent"], fg="white", font=("Segoe UI", 9, "bold"), padx=14, pady=8, cursor="hand2").pack(anchor="e", padx=18, pady=(18, 18))
+
+    def _open_briefing_editor(self) -> None:
+        prefs = load_preferences(); block = prefs["briefing"]; popup, body = self._dialog_base("Briefing", "580x500")
+        enabled = tk.BooleanVar(value=block.get("enabled", True)); topics = block.get("topics", {}); vars_ = {key: tk.BooleanVar(value=bool(topics.get(key, False))) for key in topics}
+        labels = {"middle_east": "Moyen-Orient", "ukraine": "Ukraine", "oil_energy": "Pétrole & énergie", "technology": "Technologie", "military_defense": "Défense & militaire", "major_geopolitics": "Géopolitique majeure", "france_domestic": "France intérieure", "protests": "Manifestations", "sports": "Sport", "entertainment": "Culture / divertissement"}
+        tk.Label(body, text="📰 Centres d’intérêt", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 16, "bold")).pack(anchor="w", padx=18, pady=(18, 5))
+        tk.Checkbutton(body, text="Activer le briefing", variable=enabled, bg=COLORS["card"], activebackground=COLORS["card"], selectcolor="white", font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=18, pady=(0, 10))
+        grid = tk.Frame(body, bg=COLORS["card"]); grid.pack(fill="x", padx=18)
+        for i, key in enumerate(vars_):
+            tk.Checkbutton(grid, text=labels.get(key, key), variable=vars_[key], bg=COLORS["card"], activebackground=COLORS["card"], selectcolor="white", font=("Segoe UI", 9)).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, 28), pady=4)
+        tk.Label(body, text="Les choix filtrent les thèmes récupérés. Les données Web restent en lecture seule et ne deviennent jamais des commandes.", bg=COLORS["soft_success"], fg=COLORS["success"], font=("Segoe UI", 8, "bold"), wraplength=500, justify="left", padx=10, pady=8).pack(fill="x", padx=18, pady=(14, 0))
+        def save():
+            block["enabled"] = enabled.get(); block["topics"] = {key: var.get() for key, var in vars_.items()}; save_preferences(prefs); popup.destroy(); self._refresh_personalization_state(); self.weather_var.set("Météo : chargement à la demande"); self.news_var.set("Actualités : chargement à la demande")
+        tk.Button(body, text="Appliquer", command=save, relief="flat", bd=0, bg=COLORS["accent"], fg="white", font=("Segoe UI", 9, "bold"), padx=14, pady=8, cursor="hand2").pack(anchor="e", padx=18, pady=(18, 18))
+
+    def _open_declared_habits_editor(self) -> None:
+        declared = load_declared_habits(); popup, body = self._dialog_base("Habitudes déclarées", "580x430")
+        start = tk.StringVar(value=declared.get("typical_start_time", "07:30")); apps_current = set(declared.get("frequent_apps", [])); labels = [("edge", "Edge"), ("outlook", "Outlook"), ("teams", "Teams"), ("word", "Word"), ("excel", "Excel"), ("vscode", "VS Code"), ("github", "GitHub"), ("chatgpt", "ChatGPT"), ("whatsapp", "WhatsApp")]; vars_ = {k: tk.BooleanVar(value=k in apps_current) for k, _ in labels}
+        tk.Label(body, text="📌 Habitudes déclarées", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 16, "bold")).pack(anchor="w", padx=18, pady=(18, 10))
+        tk.Label(body, text="Heure habituelle de début", bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 8, "bold")).pack(anchor="w", padx=18); tk.Entry(body, textvariable=start, width=8, relief="flat", bg=COLORS["soft_neutral"], font=("Segoe UI", 10)).pack(anchor="w", padx=18, pady=(4, 12), ipady=6)
+        grid = tk.Frame(body, bg=COLORS["card"]); grid.pack(fill="x", padx=18)
+        for i, (key, label) in enumerate(labels): tk.Checkbutton(grid, text=label, variable=vars_[key], bg=COLORS["card"], activebackground=COLORS["card"], selectcolor="white", font=("Segoe UI", 9)).grid(row=i // 3, column=i % 3, sticky="w", padx=(0, 18), pady=3)
+        def save():
+            declared["typical_start_time"] = start.get().strip(); declared["frequent_apps"] = [k for k, var in vars_.items() if var.get()]; save_declared_habits(declared); popup.destroy(); self._refresh_personalization_state()
+        tk.Button(body, text="Enregistrer", command=save, relief="flat", bd=0, bg=COLORS["accent"], fg="white", font=("Segoe UI", 9, "bold"), padx=14, pady=8, cursor="hand2").pack(anchor="e", padx=18, pady=(18, 18))
+
+    def _show_privacy_dialog(self) -> None:
+        popup, body = self._dialog_base("Confidentialité", "590x420")
+        tk.Label(body, text="🔒 Confidentialité & contrôle", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 16, "bold")).pack(anchor="w", padx=18, pady=(18, 10))
+        items = [
+            ("✓", "Apprentissage local", "Les habitudes restent dans memory/ sur cette machine."),
+            ("✓", "Aucune frappe clavier", "AgentLocal n’installe aucun keylogger et n’apprend pas à partir de vos frappes."),
+            ("✓", "Aucun contenu privé", "Le contenu des e-mails, messages et mots de passe n’est pas utilisé pour apprendre."),
+            ("✓", "Automatisation contrôlée", "Une habitude détectée devient une proposition ; elle n’est jamais activée automatiquement."),
+        ]
+        for icon, title, desc in items:
+            row = tk.Frame(body, bg=COLORS["soft_success"]); row.pack(fill="x", padx=18, pady=4)
+            tk.Label(row, text=icon, bg=COLORS["soft_success"], fg=COLORS["success"], font=("Segoe UI", 10, "bold")).pack(side="left", padx=(10, 8), pady=8)
+            text = tk.Frame(row, bg=COLORS["soft_success"]); text.pack(side="left", fill="x", expand=True)
+            tk.Label(text, text=title, bg=COLORS["soft_success"], fg=COLORS["text"], font=("Segoe UI", 9, "bold")).pack(anchor="w")
+            tk.Label(text, text=desc, bg=COLORS["soft_success"], fg=COLORS["muted"], font=("Segoe UI", 8), wraplength=460, justify="left").pack(anchor="w")
+        tk.Button(body, text="Fermer", command=popup.destroy, relief="flat", bd=0, bg=COLORS["soft_neutral"], fg=COLORS["text"], font=("Segoe UI", 9, "bold"), padx=14, pady=8, cursor="hand2").pack(anchor="e", padx=18, pady=(14, 18))
+
+
     def _build_settings_page(self) -> None:
         page = self._new_page("settings")
-        self._section_title(page, "Paramètres", "Informations de fonctionnement. Les réglages sensibles restent dans les fichiers de configuration contrôlés.").grid(row=0, column=0, sticky="ew")
+        self._section_title(page, "Paramètres avancés", "Informations techniques. La personnalisation quotidienne se fait maintenant depuis la page Configuration.").grid(row=0, column=0, sticky="ew")
 
         card = tk.Frame(page, bg=COLORS["card"], highlightbackground=COLORS["border"], highlightthickness=1)
         card.grid(row=1, column=0, sticky="ew", pady=(14, 0))
@@ -918,6 +1470,11 @@ class AgentLocalGUI:
             pass
         if page:
             self.show_page(page)
+        if not is_onboarding_complete():
+            try:
+                self.root.after(120, lambda: self._maybe_show_onboarding(force=True))
+            except tk.TclError:
+                pass
 
     def _main_window_hidden(self) -> bool:
         try:
@@ -926,6 +1483,8 @@ class AgentLocalGUI:
             return False
 
     def _show_background_alert_popup(self, items: list[dict]) -> None:
+        if not bool(load_preferences().get("alerts", {}).get("background_notifications", True)):
+            return
         if not items:
             return
         item = items[0]
@@ -969,8 +1528,10 @@ class AgentLocalGUI:
             "alerts": "Problèmes détectés et historique local",
             "files": "Fichiers autorisés et analyses locales",
             "web": "Navigation Edge contrôlée",
-            "routines": "Routines et habitudes locales",
-            "settings": "Version, moteur et état de santé",
+            "routines": "Routines locales et planifications confirmées",
+            "habits": "Ce qu’AgentLocal apprend et propose",
+            "configuration": "Profil, comportement, briefing et confidentialité",
+            "settings": "Version, moteur et paramètres techniques avancés",
         }
         self.top_title.configure(text=labels.get(key, APP_TITLE))
         self.top_subtitle.configure(text=subtitles.get(key, ""))
@@ -981,6 +1542,10 @@ class AgentLocalGUI:
                 button.configure(bg=COLORS["sidebar"], fg="#D9E1EC", font=("Segoe UI", 10))
         if key == "alerts":
             self._refresh_alerts_page()
+        if key == "habits":
+            self._refresh_habits_page()
+        if key == "configuration":
+            self._refresh_configuration_page()
         if key == "briefing" and not self.briefing_fetching and self.weather_var.get().startswith("Météo : chargement"):
             self._start_briefing_refresh(show_popup=False, force=False)
         if key == "assistant" and not self.busy:
@@ -1039,7 +1604,7 @@ class AgentLocalGUI:
         except Exception:
             pass
         if hasattr(self, "home_greeting"):
-            self.home_greeting.configure(text=f"{_greeting()} !")
+            self.home_greeting.configure(text=self._personalized_greeting_text())
 
     # ------------------------------------------------------------------
     # Briefing connecte V12
@@ -1191,6 +1756,12 @@ class AgentLocalGUI:
         self._append_text("AgentLocal : ", decorate_response(text, error=True), "error")
 
     def _refresh_suggestion_buttons(self) -> None:
+        if not bool(load_preferences().get("assistant", {}).get("smart_suggestions", True)):
+            for button in getattr(self, "suggestion_buttons", []):
+                button.grid_remove()
+            if hasattr(self, "suggestion_frame"):
+                self.suggestion_frame.grid_remove()
+            return
         suggestions = []
         try:
             if agent is not None and hasattr(agent, "get_pending_action_suggestions"):
@@ -1401,9 +1972,9 @@ class AgentLocalGUI:
         for item in generated:
             try:
                 code = str(item.get("code", "")); active_codes.add(code)
-                raise_alert(code, str(item.get("level", "info")), str(item.get("title", "Alerte")), str(item.get("message", "")), "system_monitor")
-                if str(item.get("level", "info")) in {"warning", "critical"} and code not in self.notified_alert_codes:
-                    notify_items.append(item)
+                stored = raise_alert(code, str(item.get("level", "info")), str(item.get("title", "Alerte")), str(item.get("message", "")), "system_monitor")
+                if code not in self.notified_alert_codes and popup_allowed(stored):
+                    notify_items.append(stored)
             except Exception as error:
                 log_exception("gui.raise_health_alert", error)
         try:
@@ -1415,9 +1986,43 @@ class AgentLocalGUI:
             code = str(item.get("code", ""))
             if code:
                 self.notified_alert_codes.add(code)
+                try: mark_popup(item)
+                except Exception: pass
         self._refresh_alerts_page()
         if notify_items and self._main_window_hidden():
             self._show_background_alert_popup(notify_items)
+
+    def _notification_digest_loop(self) -> None:
+        try:
+            active = list_alerts("active", 100)
+            if self._main_window_hidden() and digest_due(active):
+                self._show_notification_digest_popup(active)
+                mark_digest()
+        except Exception as error:
+            log_exception("gui.notification_digest", error)
+        try:
+            self.root.after(60000, self._notification_digest_loop)
+        except tk.TclError:
+            pass
+
+    def _show_notification_digest_popup(self, items: list[dict]) -> None:
+        if not items:
+            return
+        popup = tk.Toplevel(self.root); popup.title("AgentLocal - Résumé des notifications"); popup.geometry("540x320"); popup.resizable(False, False); popup.configure(bg=COLORS["bg"])
+        try:
+            popup.attributes("-topmost", True); popup.after(1000, lambda: popup.attributes("-topmost", False))
+        except tk.TclError:
+            pass
+        card = tk.Frame(popup, bg=COLORS["card"], highlightbackground=COLORS["border"], highlightthickness=1); card.pack(fill="both", expand=True, padx=16, pady=16)
+        critical = sum(1 for x in items if x.get("level") == "critical"); warning = sum(1 for x in items if x.get("level") == "warning"); info = sum(1 for x in items if x.get("level") == "info")
+        tk.Label(card, text="🔔 Résumé AgentLocal", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 15, "bold")).pack(anchor="w", padx=16, pady=(16,4))
+        tk.Label(card, text=f"{len(items)} alerte(s) actives · {critical} critique(s) · {warning} avertissement(s) · {info} information(s)", bg=COLORS["card"], fg=COLORS["muted"], font=("Segoe UI", 9)).pack(anchor="w", padx=16)
+        for item in items[:4]:
+            level = str(item.get("level", "info")); symbol = "🔴" if level == "critical" else ("⚠" if level == "warning" else "ℹ")
+            tk.Label(card, text=f"{symbol} {item.get('title','Alerte')}", bg=COLORS["card"], fg=COLORS["text"], font=("Segoe UI", 9, "bold"), wraplength=470, justify="left").pack(anchor="w", padx=16, pady=(8,0))
+        buttons = tk.Frame(card, bg=COLORS["card"]); buttons.pack(fill="x", padx=16, pady=(16,14))
+        tk.Button(buttons, text="Voir les alertes", command=lambda:(popup.destroy(), self.reveal_main("alerts")), relief="flat", bd=0, bg=COLORS["accent"], fg="white", font=("Segoe UI",9,"bold"), padx=12, pady=7, cursor="hand2").pack(side="left")
+        tk.Button(buttons, text="Fermer", command=popup.destroy, relief="flat", bd=0, bg=COLORS["soft_neutral"], fg=COLORS["muted"], font=("Segoe UI",9), padx=12, pady=7, cursor="hand2").pack(side="right")
 
     def _morning_automation_loop(self) -> None:
         try:

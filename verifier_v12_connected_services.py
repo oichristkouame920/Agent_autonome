@@ -13,7 +13,7 @@ from backends.deterministic_backend import interpret
 from project_version import AGENTLOCAL_VERSION, AGENTLOCAL_BUILD
 from app.gui import AgentLocalGUI
 
-assert AGENTLOCAL_VERSION == "12.3"
+assert AGENTLOCAL_VERSION == "12.5"
 assert "connected-services" in AGENTLOCAL_BUILD
 assert (ROOT / "app/connected_services.py").is_file()
 assert (ROOT / "config/connected_services.json").is_file()

@@ -38,3 +38,9 @@ browser_extension/bridge_config.js
 
 # Etat local du briefing connecte
 runtime/connected_services_state.json
+
+# Donnees locales propres a chaque hote AgentLocal
+memory/user_profile.json
+memory/user_preferences.json
+memory/onboarding_state.json
+memory/declared_habits.json

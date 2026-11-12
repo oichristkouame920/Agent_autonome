@@ -32,7 +32,16 @@ $requiredFiles = @(
     "app\daily_quotes.py",
     "app\response_style.py",
     "config\quotes.json",
+    "app\user_profile.py",
+    "app\learning_profile.py",
+    "app\onboarding.py",
+    "app\theme_manager.py",
+    "app\notification_policy.py",
+    "app\language_profile.py",
+    "config\defaults.json",
     "verifier_v12_3_ux_premium.py",
+    "verifier_v12_4_personalization.py",
+    "verifier_v12_5_personalisation_notifications.py",
     "configure_windows_startup_v12_2_2.py",
     "upgrade_automation_config_v12_2_2.py"
 )

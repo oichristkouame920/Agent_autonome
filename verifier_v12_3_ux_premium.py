@@ -9,7 +9,7 @@ for p in (ROOT,APP):
 from project_version import AGENTLOCAL_VERSION, AGENTLOCAL_BUILD
 from daily_quotes import quote_of_day
 from response_style import decorate_response
-assert AGENTLOCAL_VERSION == "12.3"
+assert AGENTLOCAL_VERSION == "12.5"
 assert "v12.3-ux-premium" in AGENTLOCAL_BUILD
 q=json.loads((ROOT/"config/quotes.json").read_text(encoding="utf-8"))
 assert len(q.get("quotes",[])) >= 28

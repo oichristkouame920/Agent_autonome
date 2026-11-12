@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 title AgentLocal - Lanceur unique
 
-rem AgentLocal V12.3 - point d'entree utilisateur unique.
+rem AgentLocal V12.4 - point d'entree utilisateur unique.
 rem Les anciens .bat sont archives automatiquement au premier lancement.
 call :ARCHIVE_LEGACY >nul 2>&1
 

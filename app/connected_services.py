@@ -33,6 +33,7 @@ from project_version import AGENTLOCAL_VERSION
 CONFIG_PATH = PROJECT_ROOT / "config" / "connected_services.json"
 PERMISSIONS_PATH = PROJECT_ROOT / "config" / "permissions.json"
 STATE_PATH = PROJECT_ROOT / "runtime" / "connected_services_state.json"
+USER_PREFERENCES_PATH = PROJECT_ROOT / "memory" / "user_preferences.json"
 
 _CACHE: dict[str, tuple[float, Any]] = {}
 _CACHE_LOCK = threading.Lock()
@@ -163,6 +164,18 @@ def _clean_text(value: object, limit: int = 240) -> str:
     text = re.sub(r"<[^>]+>", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text[:limit]
+
+
+
+
+def _user_briefing_preferences() -> dict:
+    """Lit uniquement les préférences de briefing locales si elles existent."""
+    try:
+        data = json.loads(USER_PREFERENCES_PATH.read_text(encoding="utf-8-sig"))
+        block = data.get("briefing", {}) if isinstance(data, dict) else {}
+        return block if isinstance(block, dict) else {}
+    except Exception:
+        return {}
 
 
 def _service_config(name: str) -> dict:
@@ -374,6 +387,9 @@ def _read_google_news_topic(
 
 def get_news(*, force: bool = False) -> tuple[bool, list[dict] | str]:
     config = _service_config("news")
+    user_briefing = _user_briefing_preferences()
+    if user_briefing and not user_briefing.get("enabled", True):
+        return False, "Le briefing est desactive dans la configuration de l'hote."
     if not config.get("enabled", False):
         return False, "Le service actualites est desactive."
 
@@ -433,11 +449,17 @@ def get_news(*, force: bool = False) -> tuple[bool, list[dict] | str]:
     already_seen: set[str] = set()
     errors: list[str] = []
 
+    selected_topics = user_briefing.get("topics", {}) if isinstance(user_briefing, dict) else {}
+    if not isinstance(selected_topics, dict):
+        selected_topics = {}
+
     for topic in topics:
         if not isinstance(topic, dict) or topic.get("enabled", True) is False:
             continue
 
         category_id = _clean_text(topic.get("id"), 60)
+        if category_id and selected_topics and category_id in selected_topics and not bool(selected_topics.get(category_id)):
+            continue
         category_label = _clean_text(topic.get("label"), 100)
         query = _clean_text(topic.get("query"), 500)
         if not category_id or not category_label or not query:

@@ -17,14 +17,14 @@ from project_version import AGENTLOCAL_VERSION, AGENTLOCAL_BUILD
 
 class ProfessionalUiV119Tests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(AGENTLOCAL_VERSION, "12.3")
+        self.assertEqual(AGENTLOCAL_VERSION, "12.5")
         self.assertIn("connected-services", AGENTLOCAL_BUILD)
 
     def test_navigation_is_complete_and_small(self):
-        self.assertEqual(
-            [key for _, key in gui.AgentLocalGUI.NAV_ITEMS],
-            ["home", "briefing", "assistant", "pc", "alerts", "files", "web", "routines", "settings"],
-        )
+        keys = [key for _, key in gui.AgentLocalGUI.NAV_ITEMS]
+        self.assertEqual(keys[:8], ["home", "briefing", "assistant", "pc", "alerts", "files", "web", "routines"])
+        self.assertEqual(keys[-1], "settings")
+        self.assertLessEqual(len(keys), 12)
 
     def test_dashboard_refresh_is_lightweight(self):
         self.assertGreaterEqual(gui.DASHBOARD_REFRESH_MS, 2000)

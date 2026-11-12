@@ -10,6 +10,7 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).resolve().parents[1]
 CONFIG_FILE = ROOT_DIR / "config" / "automation.json"
 STATE_FILE = ROOT_DIR / "memory" / "morning_automation_state.json"
+PREFERENCES_FILE = ROOT_DIR / "memory" / "user_preferences.json"
 
 
 def load_config() -> dict:
@@ -30,6 +31,18 @@ def load_config() -> dict:
             default.update(cfg)
     except Exception:
         pass
+    # Les préférences de l'hôte peuvent ajuster la fenêtre et activer/désactiver
+    # la routine, mais jamais changer le déclencheur de sécurité.
+    try:
+        prefs = json.loads(PREFERENCES_FILE.read_text(encoding="utf-8-sig"))
+        morning = prefs.get("morning", {}) if isinstance(prefs, dict) else {}
+        if isinstance(morning, dict):
+            for key in ("enabled", "start_time", "end_time"):
+                if key in morning:
+                    default[key] = morning[key]
+    except Exception:
+        pass
+    default["trigger"] = "first_unlock_seen"
     return default
 
 

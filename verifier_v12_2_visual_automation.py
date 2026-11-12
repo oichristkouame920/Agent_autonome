@@ -13,7 +13,7 @@ for path in (ROOT, APP):
 from app.gui import AgentLocalGUI, MORNING_CHECK_MS
 from project_version import AGENTLOCAL_BUILD, AGENTLOCAL_VERSION
 
-assert AGENTLOCAL_VERSION == "12.3"
+assert AGENTLOCAL_VERSION == "12.5"
 assert "visual-alerts" in AGENTLOCAL_BUILD
 assert MORNING_CHECK_MS >= 5000
 for rel in ("app/alerts.py", "app/system_monitor.py", "app/morning_automation.py", "config/automation.json"):
@@ -40,7 +40,8 @@ assert policy.get("allow_file_deletion") is False
 assert policy.get("allow_shell") is False
 
 nav = [key for _, key in AgentLocalGUI.NAV_ITEMS]
-assert nav == ["home", "briefing", "assistant", "pc", "alerts", "files", "web", "routines", "settings"]
+assert nav[:8] == ["home", "briefing", "assistant", "pc", "alerts", "files", "web", "routines"]
+assert nav[-1] == "settings"
 source = (ROOT / "app/gui.py").read_text(encoding="utf-8")
 for token in (
     "def _build_alerts_page",

@@ -166,6 +166,7 @@ from habit_tools import (
     format_habit_draft,
     get_habit_draft,
     get_pending_habits,
+    get_habits_by_status,
     get_learning_summary,
     record_session,
     remove_habit_draft_action,
@@ -198,6 +199,14 @@ from backends.backend_manager import (
 from backends.deterministic_backend import (
     interpret as interpret_deterministic_for_proof,
 )
+
+try:
+    from language_profile import resolve_expression as resolve_learned_expression, record_unrecognized
+    from user_profile import preference as user_preference
+except Exception:
+    resolve_learned_expression = None
+    record_unrecognized = None
+    user_preference = None
 
 
 # ============================================================
@@ -271,6 +280,12 @@ FILE_ROOT_ALIASES = {
     # Téléchargements
     "telechargement": "downloads",
     "telechargements": "downloads",
+    "telechargment": "downloads",
+    "telechargments": "downloads",
+    "telechagement": "downloads",
+    "telechagements": "downloads",
+    "telechargemnt": "downloads",
+    "telechargemnts": "downloads",
     "download": "downloads",
     "downloads": "downloads",
 
@@ -385,6 +400,17 @@ def get_agent_config():
 # ============================================================
 
 def is_learning_enabled():
+
+    # V12.4 : la préférence de l'hôte pilote l'apprentissage quand elle existe.
+    # Elle ne change aucune permission d'action et reste stockée localement.
+    try:
+        from user_profile import load_preferences
+        preferences = load_preferences()
+        learning_pref = preferences.get("learning", {}) if isinstance(preferences, dict) else {}
+        if isinstance(learning_pref, dict) and "enabled" in learning_pref:
+            return bool(learning_pref.get("enabled"))
+    except Exception:
+        pass
 
     learning = (
         get_agent_config()
@@ -601,10 +627,10 @@ def verify_explicit_list_directory(
     )
 
     patterns = [
-        r"^(?:liste|lister) (.+)$",
-        r"^(?:affiche|afficher) (.+)$",
-        r"^(?:montre|montrer) (.+)$",
-        r"^voir (.+)$",
+        r"^(?:liste|lister)(?:-moi|\s+moi)?\s+(.+)$",
+        r"^(?:affiche|afficher)(?:-moi|\s+moi)?\s+(.+)$",
+        r"^(?:montre|montrer)(?:-moi|\s+moi)?\s+(.+)$",
+        r"^voir\s+(.+)$",
     ]
 
     for pattern in patterns:
@@ -3451,17 +3477,40 @@ def format_habit_summary():
     pending = int(summary.get("pending", 0))
     drafts = int(summary.get("drafts", 0))
 
-    lines = [
-        f"Tu as {accepted} habitude(s) validée(s), {pending} proposition(s) en attente et {drafts} brouillon(s)."
-    ]
+    if accepted == 0 and pending == 0 and drafts == 0:
+        return (
+            "Je n’ai encore aucune habitude validée ni proposition en attente. "
+            "Si l’apprentissage est activé, je continuerai à observer uniquement "
+            "les actions autorisées et je te proposerai une routine quand un schéma "
+            "répété sera suffisamment clair."
+        )
+
+    lines = []
+    accepted_habits = get_habits_by_status("accepted")
+    if accepted_habits:
+        lines.append("Habitudes validées :")
+        for habit in accepted_habits[:5]:
+            label = habit.get("title") or f"Habitude #{habit.get('id')}"
+            typical = habit.get("typical_time")
+            suffix = f" · vers {typical}" if typical else ""
+            lines.append(f"- {label}{suffix}")
+        if len(accepted_habits) > 5:
+            lines.append(f"- {len(accepted_habits) - 5} autre(s) habitude(s) validée(s).")
 
     habits = get_pending_habits()
     if habits:
+        if lines:
+            lines.append("")
         lines.append("Propositions en attente :")
         for habit in habits[:5]:
             lines.append(f"- #{habit.get('id')} {habit.get('title')}")
         if len(habits) > 5:
             lines.append(f"- {len(habits) - 5} autre(s) proposition(s).")
+
+    if drafts:
+        if lines:
+            lines.append("")
+        lines.append(f"Brouillons de modification : {drafts}.")
 
     return "\n".join(lines)
 
@@ -4683,6 +4732,16 @@ def process_instruction(
     if contextual_command:
         return process_instruction(contextual_command)
 
+    # V12.5 : une expression explicitement apprise par cet hôte repasse par
+    # toutes les validations normales. Elle ne contourne jamais le moteur.
+    if resolve_learned_expression is not None:
+        try:
+            learned_command = resolve_learned_expression(user_message)
+        except Exception:
+            learned_command = None
+        if learned_command and _normalize_session_phrase(learned_command) != _normalize_session_phrase(user_message):
+            return process_instruction(learned_command)
+
     # Une nouvelle demande sans rapport invalide les anciennes suggestions.
     clear_pending_suggestion()
     clear_pending_choice()
@@ -4745,6 +4804,12 @@ def process_instruction(
                 f"{error}"
             )
 
+        try:
+            should_store = bool(user_preference("understanding.store_unrecognized", True)) if user_preference is not None else False
+            if should_store and record_unrecognized is not None:
+                record_unrecognized(user_message)
+        except Exception:
+            pass
         return (
             "Je n’ai pas capté exactement ce que tu veux faire. "
             "Dis-moi juste l’action et la cible, par exemple : « ouvre Formation JS », "

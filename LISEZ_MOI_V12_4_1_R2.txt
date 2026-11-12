@@ -1,0 +1,17 @@
+AgentLocal V12.4.1 R2 - correctif verification profil hote
+
+Extraction : directement dans C:\Users\cdn09\AgentLocal
+Accepter le remplacement des fichiers.
+
+Ce patch corrige uniquement la verification V12.4 :
+- user_profile.json et les preferences sont autorises sur une installation deja configuree ;
+- les donnees hote doivent rester absentes du manifeste de distribution ;
+- les donnees hote sont exclues de Git ;
+- si elles existent localement, elles doivent etre des objets JSON valides.
+
+Fichiers remplaces :
+- verifier_v12_4_personalization.py
+- tests\test_v12_4_personalization.py
+- .gitignore
+
+Ensuite : AgentLocal.bat -> option 4.

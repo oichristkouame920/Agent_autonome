@@ -576,6 +576,22 @@ def _run_llama_adaptive(prompt, model):
 
 atexit.register(stop_warm_server)
 
+def _local_conversation_style_hint():
+    path = ROOT_DIR / "memory" / "user_preferences.json"
+    try:
+        prefs = json.loads(path.read_text(encoding="utf-8-sig"))
+        assistant = prefs.get("assistant", {}) if isinstance(prefs, dict) else {}
+    except Exception:
+        assistant = {}
+    style = str(assistant.get("response_style", "natural")).lower()
+    emoji = str(assistant.get("emoji_level", "light")).lower()
+    detail = str(assistant.get("response_detail", "balanced")).lower()
+    style_label = {"professional": "professionnel et direct", "concise": "tres concis", "natural": "naturel et chaleureux"}.get(style, "naturel et chaleureux")
+    emoji_label = {"none": "sans emoji", "expressive": "avec quelques emoji utiles", "light": "avec au plus un emoji utile"}.get(emoji, "avec au plus un emoji utile")
+    detail_label = {"short": "reponse courte", "detailed": "reponse un peu plus detaillee", "balanced": "reponse equilibree"}.get(detail, "reponse equilibree")
+    return f"Pour une reponse conversationnelle uniquement : ton {style_label}, {emoji_label}, {detail_label}."
+
+
 def _build_prompt(user_message):
     return f"""Tu es la couche de comprehension linguistique locale d'AgentLocal.
 Tu ne commandes jamais Windows et tu n'executes jamais rien.
@@ -588,6 +604,7 @@ Regles imperatives :
 - Ne jamais proposer PowerShell, CMD, Windows Terminal, Bash, WSL ni une commande shell.
 - Si la demande est ambigue, demander une precision.
 - Si c'est une simple conversation, repondre brievement sans proposer d'action.
+- {_local_conversation_style_hint()}
 - Une commande canonique doit representer une seule intention claire, sauf si l'utilisateur demande explicitement plusieurs actions.
 - Repondre UNIQUEMENT avec un objet JSON, sans markdown ni texte autour.
 

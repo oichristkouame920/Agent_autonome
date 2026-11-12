@@ -1,0 +1,17 @@
+AgentLocal V12.4.2 - Routage naturel / briefing / habitudes
+
+Installation :
+1. Fermer AgentLocal.
+2. Extraire le contenu de ce ZIP directement dans C:\Users\cdn09\AgentLocal
+3. Accepter le remplacement des fichiers.
+4. Lancer AgentLocal.bat puis option 4.
+
+Corrections principales :
+- Quelles sont mes habitudes ? / liste mes habitudes -> moteur deterministe local.
+- Briefing du jour / mon briefing du jour / affiche le briefing -> lecture reelle du briefing, sans LLM.
+- Fenetres et onglets : formulations naturelles et fautes courantes preservees.
+- Si Teams desktop est ferme, suggestion explicite pour fermer Teams dans Edge.
+- Le mot "sont" ne declenche plus l'emoji audio.
+- Verification V12.4 compatible avec un profil hote deja cree.
+
+Aucun fichier memory/ personnel n'est inclus dans ce patch.

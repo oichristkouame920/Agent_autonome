@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from project_version import AGENTLOCAL_BUILD, AGENTLOCAL_VERSION
 ROOT=Path(__file__).resolve().parent
-assert AGENTLOCAL_VERSION == "12.3"
+assert AGENTLOCAL_VERSION == "12.5"
 assert "v12.2.2-windows-autostart" in AGENTLOCAL_BUILD
 for rel in (
     "app/windows_startup.py",

@@ -257,9 +257,19 @@ FILE_ROOT_ALIASES = {
     # Téléchargements
     "telechargement": "downloads",
     "telechargements": "downloads",
+    "telechargment": "downloads",
+    "telechargments": "downloads",
+    "telechagement": "downloads",
+    "telechagements": "downloads",
+    "telechargemnt": "downloads",
+    "telechargemnts": "downloads",
     "mes telechargements": "downloads",
     "mes telechargement": "downloads",
+    "mes telechargment": "downloads",
+    "mes telechargments": "downloads",
+    "mes telechagements": "downloads",
     "mon telechargement": "downloads",
+    "mon telechargment": "downloads",
     "download": "downloads",
     "downloads": "downloads",
 
@@ -1564,6 +1574,10 @@ def _apply_v118_safe_typos(value):
     text = re.sub(r"\bfire\s+fox\b", "firefox", text, flags=re.IGNORECASE)
     text = re.sub(r"\bmozila\s+firefox\b", "mozilla firefox", text, flags=re.IGNORECASE)
     text = re.sub(r"\bwhatsap\b", "whatsapp", text, flags=re.IGNORECASE)
+    # Fautes terrain frequentes sur Telechargements. On limite cette correction
+    # a un nom de dossier connu et jamais a un contenu litteral.
+    text = re.sub(r"\btelecharg(?:m|em|ame|age)?nts?\b", "telechargements", text, flags=re.IGNORECASE)
+    text = re.sub(r"\btelechagements?\b", "telechargements", text, flags=re.IGNORECASE)
     return text
 
 
@@ -2147,11 +2161,19 @@ def parse_habit_command(
         user_message
     )
 
+    # Les commandes d'habitudes sont des intentions locales fermees.
+    # On tolere donc la ponctuation finale et quelques fautes terrain
+    # sans jamais modifier les noms/parametres d'une action sensible.
+    plain = re.sub(r"[.!?,;:]+$", "", text).strip()
+    plain = re.sub(r"\bhabittudes?\b", "habitudes", plain)
+    plain = re.sub(r"\bhabitues\b", "habitudes", plain)
+    plain = re.sub(r"\s+", " ", plain).strip()
+
     # --------------------------------------------------------
     # Liste
     # --------------------------------------------------------
 
-    if text in {
+    if plain in {
         "affiche mes habitudes",
         "afficher mes habitudes",
         "montre mes habitudes",
@@ -2173,7 +2195,7 @@ def parse_habit_command(
             )
         ]
 
-    if text in {
+    if plain in {
         "habitudes en attente",
         "mes habitudes en attente",
         "liste les habitudes en attente",
@@ -2204,7 +2226,7 @@ def parse_habit_command(
 
         match = re.fullmatch(
             pattern,
-            text
+            plain
         )
 
         if match:
@@ -2225,7 +2247,7 @@ def parse_habit_command(
             r"(?:affiche|afficher|montre|montrer|voir) "
             r"le brouillon de l'?habitude (\d+)"
         ),
-        text
+        plain
     )
 
     if match:
@@ -2246,7 +2268,7 @@ def parse_habit_command(
             r"(?:annule|annuler) "
             r"la modification de l'?habitude (\d+)"
         ),
-        text
+        plain
     )
 
     if match:
@@ -2459,7 +2481,7 @@ def parse_habit_command(
 
         match = re.fullmatch(
             pattern,
-            text
+            plain
         )
 
         if match:
@@ -2482,7 +2504,7 @@ def parse_habit_command(
 
         match = re.fullmatch(
             pattern,
-            text
+            plain
         )
 
         if match:
@@ -2505,7 +2527,7 @@ def parse_habit_command(
 
         match = re.fullmatch(
             pattern,
-            text
+            plain
         )
 
         if match:
@@ -6232,6 +6254,9 @@ def parse_controlled_local_command(user_message):
         ("summary", (
             r"(?:combien|nombre) (?:de )?processus (?:sont )?(?:ouverts|lances|en cours)",
             r"(?:liste|etat|resume) (?:des )?processus",
+            r"(?:montre|affiche|liste|donne moi|verifi(?:e|er)?|voir) (?:moi )?(?:les )?processus",
+            r"(?:quels sont|c est quoi) (?:les )?processus",
+            r"(?:les )?processus",
         )),
     )
     for query, patterns in process_patterns:
@@ -6244,15 +6269,22 @@ def parse_controlled_local_command(user_message):
         r"(?:montre|affiche|donne moi) (?:les )?performances? (?:d |de )?agentlocal",
         r"(?:agentlocal )?(?:est|tu es) (?:rapide|lent) comment",
         r"(?:etat|statut) (?:de )?agentlocal",
+        r"(?:quel|quelle) (?:est )?(?:ton|ta) (?:etat|statut)",
+        r"(?:donne|montre|affiche) (?:moi )?(?:ton |ta |l )?(?:etat|statut)(?: agentlocal)?",
+        r"(?:comment )?(?:tu|agentlocal) (?:fonctionnes?|tournes?|vas cote systeme)",
     )
     if any(re.fullmatch(pattern, plain) for pattern in agent_performance_patterns):
         return [make_action("read_system_info", "agent")]
 
+    # Fenetres visibles : formulation volontairement souple pour le francais oral.
+    # On tolere notamment singulier/pluriel, "qui sont", "ssont" et
+    # les formes terrain "verifi les fenetres ouvertes".
     visible_window_patterns = (
-        r"(?:quelle|quelles|quel|quels) (?:sont )?(?:les )?fenetres? (?:actives|active|ouvertes|ouverte|visibles|visible) (?:sur (?:ce|mon) pc)?",
-        r"(?:liste|montre|affiche|donne moi) (?:les )?fenetres? (?:actives|ouvertes|visibles)",
-        r"(?:fenetres? actives|fenetres? ouvertes|fenetres? visibles)",
-        r"(?:qu est ce qui|qu est-ce qui) est ouvert (?:sur )?(?:mon|ce) pc",
+        r"(?:quelle|quelles|quel|quels)\s+(?:s+ont\s+)?(?:les\s+)?fenetres?\s+(?:(?:qui\s+)?s+ont\s+)?(?:actives?|ouvertes?|visibles?)(?:\s+sur\s+(?:ce|mon)\s+pc)?",
+        r"(?:liste|montre|affiche|donne moi|verifi(?:e|er)?)\s+(?:moi\s+)?(?:les\s+)?fenetres?\s+(?:(?:qui\s+)?s+ont\s+)?(?:actives?|ouvertes?|visibles?)(?:\s+sur\s+(?:ce|mon)\s+pc)?",
+        r"(?:fenetres?\s+(?:(?:qui\s+)?s+ont\s+)?(?:actives?|ouvertes?|visibles?))",
+        r"(?:combien|nombre)\s+(?:de\s+)?fenetres?\s+(?:(?:qui\s+)?s+ont\s+)?(?:actives?|ouvertes?|visibles?)(?:\s+sur\s+(?:ce|mon)\s+pc)?",
+        r"(?:qu est ce qui|qu est-ce qui)\s+est\s+ouvert\s+(?:sur\s+)?(?:mon|ce)\s+pc",
     )
     if any(re.fullmatch(pattern, plain) for pattern in visible_window_patterns):
         return [make_action("read_system_info", "windows")]
@@ -6407,7 +6439,7 @@ def parse_controlled_local_command(user_message):
     # --------------------------------------------------------
     # Onglets Edge via pont local existant
     # --------------------------------------------------------
-    if text in {
+    tab_list_phrases = {
         "liste mes onglets", "liste les onglets", "montre mes onglets", "montre les onglets",
         "affiche mes onglets", "affiche les onglets", "montre mes onglets edge",
         "montre les onglets edge", "quels onglets sont ouverts",
@@ -6416,7 +6448,15 @@ def parse_controlled_local_command(user_message):
         "fais moi voir les onglets", "fais voir les onglets",
         "y a quoi dans mes onglets", "il y a quoi dans mes onglets",
         "edge a quels onglets", "edge a quoi comme onglets",
-    }:
+    }
+    tab_list_patterns = (
+        r"(?:quels?|quelles?)\s+(?:s+ont\s+)?(?:les\s+)?onglets?\s+(?:(?:qui\s+)?s+ont\s+)?(?:actifs?|ouverts?|visibles?)(?:\s+(?:dans|sur)\s+edge)?",
+        r"(?:quel|quelle)\s+(?:est\s+)?(?:l\s+)?onglet\s+(?:actif|ouvert|visible)",
+        r"(?:liste|montre|affiche|donne moi|verifi(?:e|er)?)\s+(?:moi\s+)?(?:les\s+)?onglets?\s*(?:edge\s*)?(?:actifs?|ouverts?|visibles?)?",
+        r"(?:combien|nombre)\s+(?:d |de )?onglets?\s+(?:(?:qui\s+)?s+ont\s+)?(?:actifs?|ouverts?|visibles?)(?:\s+(?:dans|sur)\s+edge)?",
+        r"onglets?\s+(?:(?:qui\s+)?s+ont\s+)?(?:actifs?|ouverts?|visibles?)",
+    )
+    if text in tab_list_phrases or any(re.fullmatch(pattern, plain) for pattern in tab_list_patterns):
         return [make_action("list_browser_tabs", "edge")]
 
     match = re.fullmatch(
@@ -6561,8 +6601,12 @@ def parse_local_conversation(user_message):
     }:
         return "Ça marche."
 
-    if text in {"ca va", "comment ca va", "tu vas bien", "ca va agentlocal", "tout va bien"}:
-        return "Oui, ça va. Tu veux qu’on fasse quoi ?"
+    if text in {
+        "ca va", "comment ca va", "comment tu vas", "comment vas tu", "comment vas-tu",
+        "tu vas bien", "tu va bien", "ca va agentlocal", "tout va bien",
+        "comment tu te portes", "tu te portes bien",
+    }:
+        return "👋 Ça va bien, merci. Et toi ? Dis-moi ce qu’on fait aujourd’hui."
 
     if text in {"c'est comment", "c est comment", "ca dit quoi", "on dit quoi"}:
         return "Ça va. Dis-moi ce qu’on fait."
@@ -6819,7 +6863,12 @@ def _connected_service_actions(text):
         return [make_action("read_news", "today")]
 
     if re.fullmatch(
-        r"(?:briefing|briefing du jour|briefing du matin|mon briefing|donne moi mon briefing|affiche mon briefing)",
+        r"(?:"
+        r"briefing(?: du jour| du matin| aujourd hui)?"
+        r"|mon briefing(?: du jour| du matin| aujourd hui)?"
+        r"|(?:donne|donner|affiche|afficher|montre|montrer|fais|faire) "
+        r"(?:moi )?(?:mon |le )?briefing(?: du jour| du matin| aujourd hui)?"
+        r")",
         value,
     ):
         return [make_action("read_daily_briefing", "today")]

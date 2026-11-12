@@ -383,6 +383,24 @@ def _suggestion_items(user_message: object, actions: list[dict], display_results
             ("mute", "Couper le son", "coupe le son"),
         ])
 
+    elif action == "close_application":
+        # Une cible comme Teams peut exister a la fois en application Windows
+        # et en onglet Edge. Si le desktop est deja ferme, on ne pretend pas
+        # que tout est ferme : on propose explicitement la fermeture Web.
+        joined = "\n".join(str(x) for x in display_results).lower()
+        dual_targets = {
+            "teams": "Teams",
+            "outlook": "Outlook",
+            "whatsapp": "WhatsApp",
+        }
+        key = str(target or "").strip().lower()
+        if key in dual_targets and ("deja ferme" in joined or "déjà fermé" in joined or "déjà fermée" in joined):
+            label = dual_targets[key]
+            items.extend([
+                (f"close_web_{key}", f"Fermer {label} dans Edge", f"ferme le site {key}"),
+                ("tabs", "Voir les onglets Edge ouverts", "liste mes onglets"),
+            ])
+
     elif action in {"open_website", "open_browser_site_existing_edge"}:
         items.extend([
             ("tabs", "Voir les onglets Edge ouverts", "liste mes onglets"),

@@ -56,6 +56,13 @@ critical_files = [
     "app/daily_quotes.py",
     "app/response_style.py",
     "config/quotes.json",
+    "app/user_profile.py",
+    "app/learning_profile.py",
+    "app/onboarding.py",
+    "app/theme_manager.py",
+    "app/notification_policy.py",
+    "app/language_profile.py",
+    "config/defaults.json",
     "configure_windows_startup_v12_2_2.py",
     "upgrade_automation_config_v12_2_2.py",
 ]
@@ -63,12 +70,14 @@ for relative in critical_files:
     check((ROOT / relative).is_file(), f"Fichier critique manquant : {relative}")
 
 # 2) Source de vérité de version.
-check(AGENTLOCAL_VERSION == "12.3", "Version centrale inattendue")
+check(AGENTLOCAL_VERSION == "12.5", "Version centrale inattendue")
 check(SCHEMA_COMPAT_VERSION == 1, "Schéma de compatibilité inattendu")
 check(FIELD_LANGUAGE_PATCH_VERSION == AGENTLOCAL_BUILD, "Backend déterministe non aligné sur le build courant")
 check("llm-adaptive" in AGENTLOCAL_BUILD, "Build LLM adaptatif absent")
 check("v12.2.2-windows-autostart" in AGENTLOCAL_BUILD, "Build démarrage Windows absent")
 check("v12.3-ux-premium" in AGENTLOCAL_BUILD, "Build UX Premium V12.3 absent")
+check("v12.4-host-personalization" in AGENTLOCAL_BUILD, "Build personnalisation hôte V12.4 absent")
+check("v12.5-full-personalization" in AGENTLOCAL_BUILD, "Build personnalisation complète V12.5 absent")
 
 # 3) Tous les JSON de configuration doivent être valides.
 for path in sorted((ROOT / "config").glob("*.json")):
@@ -181,4 +190,4 @@ check(morning.get("start_time") == "07:00" and morning.get("end_time") == "09:30
 check(morning.get("trigger") == "first_unlock_seen", "Declencheur matinal V12.2 invalide")
 check(health.get("ram_warning_percent") == 80 and health.get("ram_critical_percent") == 92, "Seuils RAM V12.2 invalides")
 
-print("Conformité pack AgentLocal V12.3 : OK")
+print("Conformité pack AgentLocal V12.5 : OK")

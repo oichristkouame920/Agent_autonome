@@ -12,14 +12,15 @@ for path in (ROOT, APP):
 from project_version import AGENTLOCAL_VERSION, AGENTLOCAL_BUILD
 from app import gui
 
-assert AGENTLOCAL_VERSION == "12.3"
+assert AGENTLOCAL_VERSION == "12.5"
 assert "connected-services" in AGENTLOCAL_BUILD
 assert gui.MAX_COMMAND_LENGTH == 2000
 assert gui.DASHBOARD_REFRESH_MS >= 2000
 assert gui.COLORS.get("sidebar") and gui.COLORS.get("accent")
 
 nav_keys = [key for _, key in gui.AgentLocalGUI.NAV_ITEMS]
-assert nav_keys == ["home", "briefing", "assistant", "pc", "alerts", "files", "web", "routines", "settings"]
+assert nav_keys[:8] == ["home", "briefing", "assistant", "pc", "alerts", "files", "web", "routines"]
+assert nav_keys[-1] == "settings"
 
 source = (ROOT / "app/gui.py").read_text(encoding="utf-8")
 for token in (

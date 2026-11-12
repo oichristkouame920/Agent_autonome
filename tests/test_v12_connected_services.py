@@ -21,7 +21,7 @@ import connected_services as cs
 
 class ConnectedServicesV12Tests(unittest.TestCase):
     def test_version(self):
-        self.assertEqual(AGENTLOCAL_VERSION, "12.3")
+        self.assertEqual(AGENTLOCAL_VERSION, "12.5")
         self.assertIn("connected-services", AGENTLOCAL_BUILD)
 
     def test_weather_news_briefing_and_updates_are_deterministic(self):

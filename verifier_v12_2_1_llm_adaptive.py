@@ -4,7 +4,7 @@ from backends import llama_backend
 from project_version import AGENTLOCAL_BUILD, AGENTLOCAL_VERSION
 
 ROOT = Path(__file__).resolve().parent
-assert AGENTLOCAL_VERSION == "12.3"
+assert AGENTLOCAL_VERSION == "12.5"
 assert "llm-adaptive" in AGENTLOCAL_BUILD
 assert callable(llama_backend.probe_llama_runtime)
 assert callable(llama_backend.warm_server_status)

@@ -17,7 +17,7 @@ from project_version import AGENTLOCAL_BUILD, AGENTLOCAL_VERSION
 
 class WindowsAutostartV1222Tests(unittest.TestCase):
     def test_version_build_marker(self):
-        self.assertEqual(AGENTLOCAL_VERSION, "12.3")
+        self.assertEqual(AGENTLOCAL_VERSION, "12.5")
         self.assertIn("v12.2.2-windows-autostart", AGENTLOCAL_BUILD)
 
     def test_startup_is_current_user_and_non_admin(self):

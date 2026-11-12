@@ -38,7 +38,7 @@ class SchedulerV121Tests(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_version(self):
-        self.assertEqual(AGENTLOCAL_VERSION, "12.3")
+        self.assertEqual(AGENTLOCAL_VERSION, "12.5")
         self.assertIn("scheduler", AGENTLOCAL_BUILD)
 
     def test_parser_creates_disabled_draft_contract(self):

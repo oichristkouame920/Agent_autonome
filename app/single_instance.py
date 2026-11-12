@@ -4,7 +4,7 @@ from __future__ import annotations
 import ctypes
 import os
 
-MUTEX_NAME = "Local\\AgentLocal_GUI_V12_3"
+MUTEX_NAME = "Local\\AgentLocal_GUI"
 ERROR_ALREADY_EXISTS = 183
 
 
@@ -42,7 +42,7 @@ def focus_existing_window() -> bool:
                 return True
             buf = ctypes.create_unicode_buffer(length + 1)
             user32.GetWindowTextW(hwnd, buf, length + 1)
-            if buf.value.startswith("AgentLocal - Assistant local"):
+            if buf.value.startswith("AgentLocal -"):
                 found["hwnd"] = hwnd
                 return False
             return True

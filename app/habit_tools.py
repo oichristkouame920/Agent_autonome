@@ -1004,6 +1004,50 @@ def get_pending_habits():
         connection.close()
 
 
+def get_habits_by_status(status):
+
+    allowed = {"pending", "accepted", "rejected"}
+    status = str(status or "").strip().lower()
+    if status not in allowed:
+        return []
+
+    connection = get_connection()
+    try:
+        rows = connection.execute(
+            """
+            SELECT *
+            FROM habit_proposals
+            WHERE status = ?
+            ORDER BY last_seen DESC;
+            """,
+            (status,),
+        ).fetchall()
+
+        habits = []
+        for row in rows:
+            try:
+                actions = json.loads(row["actions_json"])
+            except (json.JSONDecodeError, TypeError):
+                actions = []
+            habits.append({
+                "id": row["id"],
+                "title": row["title"],
+                "profile": row["profile"],
+                "daypart": row["daypart"],
+                "occurrences": row["occurrences"],
+                "distinct_days": row["distinct_days"],
+                "typical_minute": row["typical_minute"],
+                "typical_time": minute_to_time(row["typical_minute"]),
+                "first_seen": row["first_seen"],
+                "last_seen": row["last_seen"],
+                "actions": actions,
+                "status": row["status"],
+            })
+        return habits
+    finally:
+        connection.close()
+
+
 def get_pending_habit_by_id(
     proposal_id
 ):

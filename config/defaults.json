@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "product": "AgentLocal",
+  "onboarding": {
+    "enabled": true,
+    "initial_learning_days": 2,
+    "recommended_mode": "hybrid"
+  },
+  "assistant": {
+    "response_style": "natural",
+    "emoji_level": "light",
+    "daily_quote": true,
+    "smart_suggestions": true,
+    "response_detail": "balanced"
+  },
+  "morning": {
+    "enabled": true,
+    "start_time": "07:00",
+    "end_time": "09:30",
+    "trigger": "first_unlock_seen"
+  },
+  "privacy": {
+    "learning_is_local": true,
+    "capture_keystrokes": false,
+    "observe_private_content": false,
+    "automatic_sensitive_actions": false
+  },
+  "appearance": {
+    "theme": "agentlocal",
+    "accent_color": "#356AE6",
+    "sidebar_color": "#101A2E",
+    "card_color": "#FFFFFF",
+    "density": "comfortable",
+    "font_scale": 1.0,
+    "patterns": true,
+    "animations": true,
+    "home_cards": {
+      "pc": true,
+      "briefing": true,
+      "routine": true,
+      "alerts": true,
+      "quote": true,
+      "habits": true,
+      "network": false,
+      "processes": false
+    }
+  },
+  "notifications": {
+    "mode": "balanced",
+    "summary_minutes": 60,
+    "critical_immediate": true,
+    "repeat_cooldown_minutes": 60,
+    "quiet_hours": {
+      "enabled": false,
+      "start": "18:30",
+      "end": "07:00",
+      "allow_critical": true
+    },
+    "categories": {
+      "system": true,
+      "briefing": true,
+      "routine": true,
+      "habits": true,
+      "updates": true
+    }
+  },
+  "understanding": {
+    "typo_tolerance": 2,
+    "store_unrecognized": true,
+    "learn_confirmed_expressions": true,
+    "context_turns": 4
+  }
+}

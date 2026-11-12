@@ -1,0 +1,19 @@
+AgentLocal V12.4.3 - Correctif intentions coeur / comprehension terrain
+
+Installation :
+1. Fermer AgentLocal.
+2. Extraire ce ZIP directement dans C:\Users\cdn09\AgentLocal
+3. Accepter le remplacement des fichiers.
+4. Lancer AgentLocal.bat puis l'option 4.
+
+Correctifs principaux :
+- liste/affiche/montre mes Telechargements reste sur le moteur deterministe.
+- fautes telechargment/telechagement/telechargemnt tolerees.
+- Processus / montre-moi les processus -> lecture reelle des processus.
+- quel est ton etat/statut -> etat reel d'AgentLocal.
+- qui est tu -> emoji AgentLocal au lieu de l'emoji fichier.
+- Habitudes et Briefing restent sur le fast-path deterministe.
+- fonction get_habits_by_status incluse dans le patch cumulatif.
+- script Windows start_agentlocal_background.vbs ecrit en ASCII sans BOM et auto-repare.
+
+Aucune modification du modele GGUF, de llama.cpp, des donnees personnelles ou du briefing utilisateur.

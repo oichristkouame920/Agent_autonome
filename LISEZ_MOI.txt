@@ -1,11 +1,27 @@
-AGENTLOCAL - PATCH BRIEFING PRIORITAIRE
+AGENTLOCAL V12.4.1 - PATCH LANGAGE / INTERACTIONS
 
+Installation :
 1. Fermer AgentLocal.
-2. Sauvegarder les fichiers actuels :
-   C:\Users\cdn09\AgentLocal\app\connected_services.py
-   C:\Users\cdn09\AgentLocal\config\connected_services.json
-3. Copier les deux fichiers de ce patch aux memes emplacements.
-4. Lancer AgentLocal.bat puis option 4.
-5. Tester : briefing du jour
+2. Extraire ce ZIP directement dans C:\Users\cdn09\AgentLocal
+3. Accepter le remplacement des fichiers.
+4. Lancer AgentLocal.bat puis option 4 pour verifier.
+5. Relancer AgentLocal.
 
-Le fichier config\permissions.json ne doit pas etre modifie : news.google.com est deja autorise dans la R4.
+Fichiers modifies :
+- backends\deterministic_backend.py
+- app\response_style.py
+
+Tests ajoutes :
+- tests\test_v12_4_1_natural_interactions.py
+- verifier_v12_4_1_interactions.py
+
+Corrections :
+- "comment tu vas ?" reste une conversation locale naturelle.
+- Fenetres ouvertes/actives/visibles reconnues avec formulations variees.
+- "qui sont", fautes courantes comme "ssont" et "verifi" tolerees.
+- "combien de fenetres sont ouvertes ?" lit reellement les fenetres.
+- "quels sont les onglets actifs ?" liste reellement les onglets Edge.
+- Le mot "sont" ne declenche plus l'emoji audio.
+- Emoji fenetre dedie : 🪟.
+
+Aucune permission, configuration utilisateur, routine, modele ou service Internet n'est modifie.

@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "product": "AgentLocal",
+  "onboarding": {
+    "enabled": true,
+    "initial_learning_days": 2,
+    "recommended_mode": "hybrid"
+  },
+  "assistant": {
+    "response_style": "natural",
+    "emoji_level": "light",
+    "daily_quote": true,
+    "smart_suggestions": true
+  },
+  "morning": {
+    "enabled": true,
+    "start_time": "07:00",
+    "end_time": "09:30",
+    "trigger": "first_unlock_seen"
+  },
+  "privacy": {
+    "learning_is_local": true,
+    "capture_keystrokes": false,
+    "observe_private_content": false,
+    "automatic_sensitive_actions": false
+  }
+}

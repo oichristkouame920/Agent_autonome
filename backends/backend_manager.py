@@ -592,6 +592,10 @@ DETERMINISTIC_PREFLIGHT_ACTIONS = {
     "read_last_reference",
     "copy_last_reference_path",
     "advanced_file_search",
+    # Listing d'une racine utilisateur autorisee (Documents, Telechargements,
+    # etc.) : lecture seule et cible fermee. Il doit rester sur le fast-path
+    # deterministe au lieu d'etre delegue au LLM.
+    "list_directory",
     "take_screenshot",
     "read_audio_state",
     "set_audio_volume",
@@ -604,6 +608,17 @@ DETERMINISTIC_PREFLIGHT_ACTIONS = {
     "calculate_file_sha256",
     "compare_files_sha256",
     "find_duplicate_files",
+    # V12.4.2 : les lectures d'habitudes et autres vues strictement
+    # informatives doivent rester sur le chemin deterministe. Sans cela,
+    # des phrases parfaitement comprises comme « liste mes habitudes »
+    # pouvaient etre envoyees au LLM qui reformulait la demande au lieu
+    # d'executer l'action locale.
+    "list_habits",
+    "list_schedules",
+    "read_weather",
+    "read_news",
+    "read_daily_briefing",
+    "check_online_updates",
 }
 
 

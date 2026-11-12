@@ -23,7 +23,7 @@ from project_version import AGENTLOCAL_BUILD, AGENTLOCAL_VERSION
 
 class VisualAutomationV122Tests(unittest.TestCase):
     def test_version_and_navigation(self):
-        self.assertEqual(AGENTLOCAL_VERSION, "12.3")
+        self.assertEqual(AGENTLOCAL_VERSION, "12.5")
         self.assertIn("visual-alerts", AGENTLOCAL_BUILD)
         self.assertIn("alerts", [key for _, key in gui.AgentLocalGUI.NAV_ITEMS])
 

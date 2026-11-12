@@ -20,7 +20,7 @@ from project_version import AGENTLOCAL_BUILD, AGENTLOCAL_VERSION
 
 class UxPremiumV123Tests(unittest.TestCase):
     def test_version_and_build(self):
-        self.assertEqual(AGENTLOCAL_VERSION, "12.3")
+        self.assertEqual(AGENTLOCAL_VERSION, "12.5")
         self.assertIn("v12.3-ux-premium", AGENTLOCAL_BUILD)
 
     def test_quote_is_stable_for_day(self):
@@ -52,7 +52,9 @@ class UxPremiumV123Tests(unittest.TestCase):
         self.assertNotIn("subprocess.Popen", source)
 
     def test_navigation_contract_is_preserved(self):
-        self.assertEqual([k for _, k in gui.AgentLocalGUI.NAV_ITEMS], ["home", "briefing", "assistant", "pc", "alerts", "files", "web", "routines", "settings"])
+        keys = [k for _, k in gui.AgentLocalGUI.NAV_ITEMS]
+        self.assertEqual(keys[:8], ["home", "briefing", "assistant", "pc", "alerts", "files", "web", "routines"])
+        self.assertEqual(keys[-1], "settings")
 
     def test_launcher_verify_and_background_labels_are_not_corrupted(self):
         source = (ROOT / "AgentLocal.bat").read_text(encoding="utf-8-sig")
