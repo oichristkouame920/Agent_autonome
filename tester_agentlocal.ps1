@@ -1,15 +1,50 @@
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
-$py = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
-if (-not (Test-Path $py)) {
-    $portable = Join-Path $PSScriptRoot "runtime\python\python.exe"
-    if (Test-Path $portable) {
-        $py = $portable
-    } else {
-        throw "Python AgentLocal introuvable (.venv ou runtime portable)."
+# AGENTLOCAL ENV BOOTSTRAP V1.7 BEGIN
+# Detecte l'environnement Python operationnel AVANT les tests.
+# Aucune installation de paquet et aucun lancement de Qwen ici.
+$envTool = Join-Path $PSScriptRoot "runtime\agentlocal_test_manager.py"
+if (-not (Test-Path $envTool)) {
+    throw "Test manager manquant. Reinstaller le correctif environnement V1.7."
+}
+$bootstrapCandidates = @(
+    (Join-Path $PSScriptRoot "runtime\python\python.exe"),
+    (Join-Path $PSScriptRoot ".venv\Scripts\python.exe"),
+    (Join-Path $PSScriptRoot "venv\Scripts\python.exe")
+)
+$boot = $null
+foreach ($candidate in $bootstrapCandidates) {
+    if (Test-Path $candidate) {
+        & $candidate --version *> $null
+        if ($LASTEXITCODE -eq 0) { $boot = $candidate; break }
     }
 }
+if (-not $boot) {
+    $systemPython = Get-Command python.exe -ErrorAction SilentlyContinue
+    if ($systemPython) { $boot = $systemPython.Source }
+}
+if ($boot) {
+    $pyResult = & $boot $envTool select
+} else {
+    $pyLauncher = Get-Command py.exe -ErrorAction SilentlyContinue
+    if (-not $pyLauncher) { throw "Aucun lanceur Python utilisable." }
+    $boot = $pyLauncher.Source
+    $pyResult = & $boot -3 $envTool select
+}
+if ($LASTEXITCODE -ne 0 -or -not $pyResult) {
+    throw "Aucun environnement Python 64 bits avec psutil et pypdf. Executer runtime\TESTER_ENVIRONNEMENT.bat doctor, puis repair --online ou --offline."
+}
+$py = [string]($pyResult | Select-Object -Last 1)
+if (-not (Test-Path $py)) {
+    throw "Interpreteur retourne par le diagnostic introuvable : $py"
+}
+Write-Host "Python AgentLocal selectionne :" $py
+& $py $envTool guard
+if ($LASTEXITCODE -ne 0) {
+    throw "Memoire disponible insuffisante pour les tests globaux. Executer les tests rapides avec runtime\TESTER_ENVIRONNEMENT.bat test --mode quick."
+}
+# AGENTLOCAL ENV BOOTSTRAP V1.7 END
 
 Write-Host ""
 Write-Host "=== 0. CONTROLE STRUCTUREL ==="

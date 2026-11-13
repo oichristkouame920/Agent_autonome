@@ -1,46 +1,99 @@
-# Environnement Python
+
+# ==========================================================
+# AGENTLOCAL - GITIGNORE
+# Branche : comprehension
+# ==========================================================
+
+# 1. ENVIRONNEMENTS PYTHON
 .venv/
+venv/
+env/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
 
-# Modèles LLM
-models/*.gguf
+# 2. MODELES D'INTELLIGENCE ARTIFICIELLE
+*.gguf
+*.ggml
+*.safetensors
+*.onnx
+*.pt
+*.pth
 
-# llama.cpp compilé / sources locales
+# 3. LLAMA.CPP ET COMPOSANTS COMPILÉS
 llama.cpp/
-
-# Ancienne version précompilée
 tools/llama.cpp/
 
-# Données locales de l'agent
+# 4. DEPENDANCES ET RUNTIMES PORTABLES
+runtime/python/
+runtime/python-*/
+runtime/portable_python/
+node_modules/
+
+# 5. SAUVEGARDES ET ANCIENNES INSTALLATIONS
+runtime/update_backup/
+runtime/backups/
+runtime/legacy_launchers/
+
+# 6. MEMOIRE ET DONNEES PERSONNELLES
 logs/
 memory/
+*.sqlite
+*.sqlite3
+*.db
 
-# Fichiers temporaires et logs
+# 7. FICHIERS TEMPORAIRES
 *.log
 *.tmp
 *.temp
+*.bak
+*.old
+*.swp
+*.swo
+*~
 
-# Configuration locale VS Code
-.vscode/
+# 8. ARCHIVES ET EXPORTS GENERES
+*.zip
+*.7z
+*.rar
 
-# Fichiers Windows
-Thumbs.db
-Desktop.ini
-
-# Secrets éventuels
+# 9. CONFIGURATIONS LOCALES ET SECRETS
 .env
 .env.*
-config/browser_bridge.json
-browser_extension/bridge_config.js
+!.env.example
+!.env.sample
 
-# Etat local du briefing connecte
+config/browser_bridge.json
+config/security_center.json
+config/connected_services.json
+browser_extension/bridge_config.js
 runtime/connected_services_state.json
 
-# Donnees locales propres a chaque hote AgentLocal
-memory/user_profile.json
-memory/user_preferences.json
-memory/onboarding_state.json
-memory/declared_habits.json
+# 10. ENVIRONNEMENT DE DEVELOPPEMENT
+.vscode/
+.idea/
+
+# 11. FICHIERS WINDOWS
+Thumbs.db
+Desktop.ini
+desktop.ini
+
+# ==========================================================
+# A CONSERVER DANS GIT :
+# - app/
+# - backends/
+# - agent_tools/
+# - tests/
+# - config/ (configurations partageables)
+# - scripts Python
+# - fichiers BAT et VBS utiles
+# - documentation
+# - jeux de donnees d'entrainement non sensibles
+# ==========================================================

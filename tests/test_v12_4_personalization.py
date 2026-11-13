@@ -20,6 +20,7 @@ import learning_profile
 import morning_automation
 import response_style
 import user_profile
+from app.git_privacy import check_private_exclusions, PRIVATE_MEMORY
 from project_version import AGENTLOCAL_BUILD, AGENTLOCAL_VERSION
 
 
@@ -139,10 +140,10 @@ class PersonalizationV124Tests(unittest.TestCase):
     def test_distribution_manifest_excludes_host_profile(self):
         names = ("user_profile.json", "user_preferences.json", "onboarding_state.json", "declared_habits.json")
         manifest = (ROOT / "MANIFEST_COMPLET_V12_4.sha256.txt").read_text(encoding="utf-8", errors="replace").replace("\\", "/")
-        gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8", errors="replace").replace("\\", "/")
         for name in names:
             self.assertNotIn(f"memory/{name}", manifest, name)
-            self.assertIn(f"memory/{name}", gitignore, name)
+        issues, _method = check_private_exclusions(ROOT, PRIVATE_MEMORY)
+        self.assertEqual(issues, [], "; ".join(issues))
 
     def test_existing_host_profile_is_allowed_on_live_install(self):
         # Une installation réellement utilisée peut déjà avoir créé ces fichiers.

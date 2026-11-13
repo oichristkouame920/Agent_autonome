@@ -42,10 +42,10 @@ for personal in PERSONAL_FILES:
         data = json.loads(live_path.read_text(encoding="utf-8"))
         assert isinstance(data, dict), f"Donnée hôte invalide : {personal}"
 
-# Ils doivent également rester exclus de Git pour éviter une publication accidentelle.
-gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8", errors="replace") if (ROOT / ".gitignore").is_file() else ""
-normalized_gitignore = gitignore.replace("\\", "/")
-for personal in PERSONAL_FILES:
-    assert f"memory/{personal}" in normalized_gitignore, f"Exclusion Git manquante : {personal}"
+# Les regles globales (memory/, /memory/*) sont aussi valides.
+# Le controle privilegie la verite de Git et detecte les fichiers encore suivis.
+from app.git_privacy import check_private_exclusions, PRIVATE_MEMORY
+issues, method = check_private_exclusions(ROOT, PRIVATE_MEMORY)
+assert not issues, "Confidentialite Git : " + "; ".join(issues)
 
 print("V12.4 personnalisation hôte / onboarding / configuration / apprentissage 2 jours : OK")

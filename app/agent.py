@@ -4573,6 +4573,8 @@ from command_sequences import (
     describe_last_sequence,
 )
 
+from interaction_guard import route_user_input
+
 # V12.5.2 : une sequence est volontairement limitee aux consultations
 # et ouvertures sans ecriture. Les operations sensibles restent unitaires.
 SAFE_SEQUENCE_ACTIONS = frozenset({
@@ -4585,6 +4587,8 @@ SAFE_SEQUENCE_ACTIONS = frozenset({
 })
 
 _SEQUENCE_HISTORY_QUESTIONS = frozenset({
+    "explique ce que tu viens de faire et ce que tu n as pas reussi",
+    "explique ce que tu viens de faire", "qu as tu fait et qu est ce qui a echoue",
     "resume les dernieres etapes", "resume la derniere sequence",
     "quelles etapes as tu executees", "quelles etapes as tu faites",
     "ou en est la derniere tache", "qu as tu fait dans la derniere tache",
@@ -4834,12 +4838,26 @@ def process_instruction(
         clear_pending_suggestion()
         return process_instruction(choice_command, _depth=_depth + 1)
 
-    if _normalize_session_phrase(user_message).replace("-", " ") in _SEQUENCE_HISTORY_QUESTIONS:
+    if re.sub(r"\s+", " ", _normalize_session_phrase(user_message).replace("-", " ").replace("'", " ")).strip() in _SEQUENCE_HISTORY_QUESTIONS:
         return describe_last_sequence()
 
     contextual_command = _resolve_session_reference_command(user_message)
     if contextual_command:
         return process_instruction(contextual_command, _depth=_depth + 1)
+
+    # Comprehension V1.5 : correction de quelques erreurs terrain, sans
+    # nouvelle permission. Une commande normalisee repasse par le parseur
+    # local de securite. Les explications ne declenchent aucun outil.
+    if _depth == 0:
+        guarded = route_user_input(user_message)
+        if guarded is not None:
+            kind, value = guarded
+            if kind == "reply":
+                clear_pending_suggestion()
+                clear_pending_choice()
+                return value
+            if kind == "command":
+                return process_instruction(value, _depth=_depth + 1)
 
     # V12.5.2 : la commande composee est analysee avant tout appel LLM global.
     # Une etape invalide bloque l'ensemble, sans effet de bord.

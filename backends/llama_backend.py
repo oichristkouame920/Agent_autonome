@@ -594,9 +594,22 @@ def _local_conversation_style_hint():
 
 
 def _build_prompt(user_message):
+    # COMPREHENSION V1 : exemples supervises courts, locaux et non executables.
+    # Si le nouveau module n'est pas present, le contrat existant est conserve.
+    try:
+        from comprehension.guide import few_shot_hint
+        language_examples = few_shot_hint(str(user_message), max_chars=1050)
+    except (ImportError, OSError, ValueError):
+        language_examples = ""
     return f"""Tu es la couche de comprehension linguistique locale d'AgentLocal.
 Tu ne commandes jamais Windows et tu n'executes jamais rien.
 Ton role est seulement de reformuler la demande utilisateur en une commande francaise courte et explicite que le moteur deterministe d'AgentLocal devra ensuite valider.
+Tu n'executes pas les commandes, mais tu DOIS les reconnaitre : classer une demande explicite
+comme « lance Word », « peux-tu ouvrir Excel ? », « could you open Word? » ou
+« je prepare un rapport, ouvre Excel » en type « command » avec sa cible exacte.
+Une justification professionnelle, une formule de politesse ou une mention de ChatGPT
+ne transforment pas une demande d'action explicite en conversation.
+Un conseil (« comment ouvrir Word ? ») reste une conversation : ne declenche jamais d'action.
 
 Regles imperatives :
 - Ne jamais inventer un nom de fichier, dossier, application, site, nombre, chemin ou destination.
@@ -615,6 +628,7 @@ Formats autorises :
 {{"type":"conversation","reply":"...","confidence":0.00}}
 {{"type":"refusal","reply":"...","confidence":0.00}}
 
+{language_examples}
 Demande utilisateur : {json.dumps(str(user_message), ensure_ascii=False)}
 """
 

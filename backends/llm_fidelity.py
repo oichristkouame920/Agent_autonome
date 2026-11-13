@@ -29,12 +29,32 @@ _NEGATION_RX = re.compile(
     r"|\bpas\s+(?:besoin|la\s+peine)\b",
     re.I,
 )
+# Negations explicites en anglais et espagnol. Les refuser avant qu'un LLM
+# ne puisse les convertir accidentellement en commandes positives.
+_NEGATION_MULTILINGUAL_RX = re.compile(
+    r"\b(?:do\s+not|don['’]?t|never|dont)\b.{0,90}\b(?:open|launch|start|run|close|delete|remove|copy|move|rename)\b"
+    r"|\bwithout\s+(?:opening|launching|starting|running|closing|deleting|removing|copying|moving|renaming)\b"
+    r"|\b(?:no|nunca)\b.{0,90}\b(?:abras|abrir|abres|cierres|cerrar|borres|borrar|ejecutes|ejecutar|lances|lanzar|iniciar|copiar|copies|muevas|mover|renombrar)\b",
+    re.I,
+)
+
 # Ressources explicites que l'IA ne doit ni inventer ni remplacer.
 _FILENAME_RX = re.compile(r"(?<![\w.])([\w+.-]+\.(?:pdf|docx?|xlsx?|pptx?|txt|csv|json|zip|py|md))(?!\w)", re.I)
 _WINDOWS_PATH_RX = re.compile(r"(?<!\w)[a-z]:\\[^\s\"'»]+", re.I)
 _QUOTED_RX = re.compile(r'[«“"]([^«»“”"]{2,140})[»”"]')
 _NUMBERS_RX = re.compile(r"(?<!\w)\d+(?:[.,]\d+)?(?:\s*%)?(?!\w)")
 _VAGUE_RX = re.compile(r"\b(?:ouvre|lance|ferme|supprime|deplace|copie|renomme)\s+(?:ca|cela|le\s+truc|ce\s+truc|celui[- ]la|celle[- ]la)\b", re.I)
+# Cas courants d'utilisateurs habitués a ChatGPT qui parlent de leur passé
+# et demandent explicitement l'ouverture d'une AUTRE application.
+# Ne pas retirer ChatGPT lorsqu'il est lui-meme la cible de l'action.
+_CHATGPT_CONTEXT_RX = re.compile(
+    r"\b(?:used|using|know|familiar\s+with|connais|connaitre|utilise|utilisee|utiliser|" 
+    r"utilisais|deja\s+utilise|comme\s+sur)\s+chatgpt\b", re.I,
+)
+_ADVICE_RX = re.compile(
+    r"\b(?:comment|how\s+to|how\s+do|como|explique|explain|apprends|teach\s+me)\b", re.I,
+)
+
 _ACTION_GROUPS = (
     (re.compile(r"\b(?:ferme|fermer|quitte|quitter)\b", re.I), re.compile(r"\b(?:ferme|fermer|quitte|quitter)\b", re.I)),
     (re.compile(r"\b(?:supprime|supprimer|efface|effacer)\b", re.I), re.compile(r"\b(?:supprime|supprimer|efface|effacer)\b", re.I)),
@@ -70,15 +90,38 @@ def semantic_fidelity(user_message: object, canonical_command: object) -> tuple[
     if not original or not canonical or len(original) > 4000 or len(canonical) > 1200:
         return False, "Demande trop longue ou incomplete. Reformule-la."
     # La negation est dangereuse en cas de transformation en action affirmative.
-    if _NEGATION_RX.search(original):
+    if _NEGATION_RX.search(original) or _NEGATION_MULTILINGUAL_RX.search(original):
         return False, "J'ai repere une negation. Precise ce que tu souhaites faire sans risque."
     if _VAGUE_RX.search(_fold(original)):
         return False, "Je ne sais pas a quoi renvoie cette expression. Precise la cible."
+    # Une question de conseil ne donne pas permission d'agir.
+    if _ADVICE_RX.search(_fold(original)):
+        return False, "Ta demande ressemble a une question ou a un conseil, pas a une autorisation d'action."
 
     original_names = _entities(original)
+    # La mention autobiographique de ChatGPT n'est pas une demande de l'ouvrir.
+    # Condition stricte: une autre cible explicite doit etre presente.
+    if 'chatgpt' in original_names and len(original_names) > 1 and _CHATGPT_CONTEXT_RX.search(_fold(original)):
+        original_names.remove('chatgpt')
     normalized_names = _entities(canonical)
     if original_names and normalized_names != original_names:
         return False, "La reformulation change le nom de l'application ou du site. Precise ta cible."
+    if not original_names and normalized_names:
+        # Interdire les applications INVENTEES par le LLM. Seules quelques
+        # periphrases generiques explicites et non ambigues sont admises.
+        generic = _fold(original)
+        aliases = {
+            "navigateur": {"edge", "chrome", "firefox"},
+            "browser": {"edge", "chrome", "firefox"},
+            "traitement de texte": {"word"},
+            "tableur": {"excel"},
+            "editeur de code": {"vscode"},
+            "code editor": {"vscode"},
+        }
+        action_requested = re.search(r"\b(?:ouvre|ouvrir|lance|lancer|demarre|demarrer|utiliser|open|start|launch)\b", generic)
+        if not action_requested or not any(label in generic and normalized_names.issubset(names)
+                   for label, names in aliases.items()):
+            return False, "La reformulation invente une application ou un site. Precise la cible."
     if original_names and re.search(r"\bou\b", _fold(original)) and len(original_names) > 1:
         return False, "Plusieurs cibles sont proposees. Choisis laquelle utiliser."
 
