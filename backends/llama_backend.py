@@ -12,6 +12,7 @@ from pathlib import Path
 
 from project_paths import PROJECT_ROOT, get_project_path, resolve_project_relative
 from runtime_resilience import log_event
+from backends.llm_fidelity import semantic_fidelity, normalized_confidence
 
 
 SCHEMA_VERSION = 2
@@ -685,10 +686,7 @@ def _extract_json_object(text):
 
 
 def _normalize_confidence(value):
-    try:
-        return max(0.0, min(float(value), 1.0))
-    except (TypeError, ValueError):
-        return 0.0
+    return normalized_confidence(value)
 
 
 def _contains_forbidden_shell_target(text):
@@ -754,6 +752,12 @@ def interpret(user_message):
             "Je ne suis pas assez sur de ce que tu veux faire. Peux-tu preciser ?",
             confidence,
             active_name,
+        )
+
+    faithful, explanation = semantic_fidelity(user_message, canonical)
+    if not faithful:
+        return _safe_non_action_result(
+            "clarification", explanation, confidence, active_name,
         )
 
     if _contains_forbidden_shell_target(canonical):
